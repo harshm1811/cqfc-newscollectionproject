@@ -1,0 +1,60 @@
+{
+  "RELIANCE": {
+    "aliases": [
+      "Reliance Industries",
+      "Reliance Industries Ltd",
+      "Reliance Industries Limited",
+      "RIL"
+    ],
+    "important_businesses": [
+      "Jio Platforms",
+      "Reliance Retail",
+      "Reliance Jio",
+      "Reliance Oil and Gas"
+    ]
+  },
+  "TCS": {
+    "aliases": [
+      "Tata Consultancy Services",
+      "Tata Consultancy Services Ltd",
+      "TCS"
+    ],
+    "important_businesses": [
+      "TCS BaNCS",
+      "Tata Digital"
+    ]
+  },
+  "TATAMOTORS": {
+    "aliases": [
+      "Tata Motors",
+      "Tata Motors Ltd",
+      "TaMo"
+    ],
+    "important_businesses": [
+      "Jaguar Land Rover",
+      "JLR",
+      "Tata Passenger Electric Mobility"
+    ]
+  },
+  "INFY": {
+    "aliases": [
+      "Infosys",
+      "Infosys Ltd",
+      "Infosys Limited"
+    ],
+    "important_businesses": [
+      "Finacle",
+      "Infosys McCamish"
+    ]
+  },
+  "HDFCBANK": {
+    "aliases": [
+      "HDFC Bank",
+      "HDFC Bank Ltd"
+    ],
+    "important_businesses": [
+      "HDFC Securities",
+      "HDB Financial Services"
+    ]
+  }
+}

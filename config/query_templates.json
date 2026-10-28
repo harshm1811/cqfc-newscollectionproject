@@ -1,0 +1,53 @@
+{
+  "general": [
+    "\"{company_name}\"",
+    "\"{ticker}\""
+  ],
+  "earnings": [
+    "\"{company_name}\" earnings",
+    "\"{company_name}\" quarterly results",
+    "\"{company_name}\" net profit",
+    "\"{company_name}\" Q1 OR Q2 OR Q3 OR Q4 results"
+  ],
+  "guidance": [
+    "\"{company_name}\" revenue guidance",
+    "\"{company_name}\" outlook"
+  ],
+  "merger_acquisition": [
+    "\"{company_name}\" acquisition",
+    "\"{company_name}\" merger",
+    "\"{company_name}\" acquires stake"
+  ],
+  "expansion_capex": [
+    "\"{company_name}\" expansion",
+    "\"{company_name}\" capex",
+    "\"{company_name}\" investment"
+  ],
+  "debt_financing": [
+    "\"{company_name}\" debt",
+    "\"{company_name}\" fundraising",
+    "\"{company_name}\" bond issue"
+  ],
+  "corporate_actions": [
+    "\"{company_name}\" dividend",
+    "\"{company_name}\" share buyback",
+    "\"{company_name}\" stock split"
+  ],
+  "management": [
+    "\"{company_name}\" CEO appointment OR resignation",
+    "\"{company_name}\" board management change"
+  ],
+  "regulation_litigation": [
+    "\"{company_name}\" SEBI",
+    "\"{company_name}\" litigation",
+    "\"{company_name}\" investigation OR fraud OR penalty"
+  ],
+  "products_contracts": [
+    "\"{company_name}\" new contract",
+    "\"{company_name}\" product launch"
+  ],
+  "subsidiaries": [
+    "\"{subsidiary}\" \"{company_name}\"",
+    "\"{subsidiary}\" earnings OR expansion"
+  ]
+}

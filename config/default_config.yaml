@@ -1,0 +1,53 @@
+# Group 1 Global Configuration
+# Equity Resolution & News Collection
+
+general:
+  default_country: "India"
+  default_exchange: "NSE"
+  max_lookback_days: 14        # Free RSS depth is typically 3-14 days
+  timeout_seconds: 15          # HTTP request timeout
+  max_retries: 3               # Number of retries on network failures
+  backoff_factor: 1.5          # Exponential backoff factor
+  rate_limit_per_second: 2.0   # Rate limit for polite scraping
+
+# Collectors Configuration
+collectors:
+  google_news_rss:
+    enabled: true
+    max_articles_per_query: 20
+    resolve_redirect_urls: true
+    language: "en-IN"
+    country_code: "IN"
+
+  generic_rss:
+    enabled: true
+    feeds:
+      - name: "Livemint Companies"
+        url: "https://www.livemint.com/rss/companies"
+      - name: "Economic Times Markets"
+        url: "https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146842.cms"
+      - name: "Business Standard Finance"
+        url: "https://www.business-standard.com/rss/finance-103.rss"
+
+  nse_announcements:
+    enabled: true
+    base_url: "https://www.nseindia.com"
+    announcements_endpoint: "/api/corporate-announcements?index=equities"
+    session_refresh_minutes: 10
+
+  bse_announcements:
+    enabled: true
+    base_url: "https://api.bseindia.com"
+
+  sebi_releases:
+    enabled: true
+    base_url: "https://www.sebi.gov.in"
+
+  company_ir:
+    enabled: false             # Experimental / per-company custom parser
+
+# User-Agent pool for rotating polite headers
+user_agents:
+  - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+  - "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"

@@ -1,0 +1,72 @@
+[
+  {
+    "company_name": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "title": "Reliance Industries Q2 Profit Rises 12% to Rs 19,878 Crore on Strong Jio, Retail Growth",
+    "description": "Billionaire Mukesh Ambani's Reliance Industries Ltd (RIL) posted a 12% jump in net profit, beating analyst estimates across major operating metrics.",
+    "url": "https://www.livemint.com/market/mark-to-market/reliance-industries-q2-results-profit-revenue-jio-retail-11729859218291.html",
+    "source": "Livemint",
+    "source_type": "NEWS_RSS",
+    "primary_source": false,
+    "published_at": "2026-10-27T14:15:00Z",
+    "first_seen_at": "2026-10-28T09:00:00Z",
+    "retrieved_at": "2026-10-28T09:00:00Z",
+    "collector": "GoogleNewsRSSCollector"
+  },
+  {
+    "company_name": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "title": "Corporate Announcement: Outcome of Board Meeting held on October 27, 2026",
+    "description": "Submission of Unaudited Standalone and Consolidated Financial Results for the quarter and half year ended September 30, 2026 along with Limited Review Report.",
+    "url": "https://www.nseindia.com/corporate-announcements/details/RELIANCE/1029384",
+    "source": "NSE",
+    "source_type": "EXCHANGE_FILING",
+    "primary_source": true,
+    "published_at": "2026-10-27T13:45:00Z",
+    "first_seen_at": "2026-10-28T09:02:00Z",
+    "retrieved_at": "2026-10-28T09:02:00Z",
+    "collector": "NSECollector"
+  },
+  {
+    "company_name": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "title": "SEBI passes administrative warning regarding disclosure compliance under LODR Regulations",
+    "description": "Securities and Exchange Board of India has issued an administrative warning letter concerning timing of certain event disclosures.",
+    "url": "https://www.sebi.gov.in/enforcement/orders/oct-2026/warning-ril_89234.html",
+    "source": "SEBI",
+    "source_type": "REGULATORY",
+    "primary_source": true,
+    "published_at": "2026-10-26T11:20:00Z",
+    "first_seen_at": "2026-10-28T09:03:00Z",
+    "retrieved_at": "2026-10-28T09:03:00Z",
+    "collector": "SEBICollector"
+  },
+  {
+    "company_name": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "title": "Jio Platforms partners with global tech consortium for next-generation AI infrastructure",
+    "description": "Reliance subsidiary Jio Platforms announces multi-billion rupee investment in enterprise cloud compute and AI cluster developments.",
+    "url": "https://economictimes.indiatimes.com/tech/technology/jio-platforms-ai-infrastructure-expansion/articleshow/102938491.cms",
+    "source": "Economic Times",
+    "source_type": "NEWS_RSS",
+    "primary_source": false,
+    "published_at": "2026-10-25T08:30:00Z",
+    "first_seen_at": "2026-10-28T09:04:00Z",
+    "retrieved_at": "2026-10-28T09:04:00Z",
+    "collector": "GoogleNewsRSSCollector"
+  },
+  {
+    "company_name": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "title": "Reliance Retail expands hyper-local logistics network across Tier-2 Indian cities",
+    "description": "Reliance Retail Ventures adds 50 new automated fulfillment centers to streamline grocery delivery timelines.",
+    "url": "https://www.business-standard.com/companies/news/reliance-retail-logistics-expansion-126102400192_1.html",
+    "source": "Business Standard",
+    "source_type": "AGGREGATOR",
+    "primary_source": false,
+    "published_at": "2026-10-24T17:00:00Z",
+    "first_seen_at": "2026-10-28T09:05:00Z",
+    "retrieved_at": "2026-10-28T09:05:00Z",
+    "collector": "GenericRSSCollector"
+  }
+]
