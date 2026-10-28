@@ -1,13 +1,5 @@
 """
 test_resolver.py - Unit Tests for EquityResolver (Person A)
-
-Test coverage goals:
-1. Exact ticker lookup ('RELIANCE' -> RELIANCE)
-2. Case-insensitive lookup ('infy' -> INFY)
-3. Alias mapping ('RIL' -> RELIANCE, 'TaMo' -> TATAMOTORS)
-4. Fuzzy matching ('reliance ind' -> RELIANCE)
-5. Ambiguity handling ('Tata' returns candidates or asks for clarification)
-6. Offline execution: all tests must run without external API calls.
 """
 
 import pytest
@@ -17,12 +9,34 @@ from equity.resolver import EquityResolver
 def test_resolver_init():
     resolver = EquityResolver()
     assert resolver is not None
+    assert len(resolver.equities_by_symbol) > 0
 
 
-@pytest.mark.skip(reason="To be implemented once Person A completes resolver logic")
-def test_resolve_exact_ticker(sample_reliance_profile):
+def test_resolve_exact_ticker():
     resolver = EquityResolver()
     profile = resolver.resolve("RELIANCE")
     assert profile is not None
     assert profile.ticker == "RELIANCE"
+    assert "Reliance Industries Limited" in profile.company_name
     assert "Jio Platforms" in profile.important_businesses
+
+
+def test_resolve_case_insensitive_symbol():
+    resolver = EquityResolver()
+    profile = resolver.resolve("infy")
+    assert profile is not None
+    assert profile.ticker == "INFY"
+
+
+def test_resolve_alias():
+    resolver = EquityResolver()
+    profile = resolver.resolve("RIL")
+    assert profile is not None
+    assert profile.ticker == "RELIANCE"
+
+
+def test_resolve_fuzzy_name():
+    resolver = EquityResolver()
+    profile = resolver.resolve("tata motors")
+    assert profile is not None
+    assert profile.ticker == "TATAMOTORS"
