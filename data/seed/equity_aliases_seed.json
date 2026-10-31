@@ -4,36 +4,83 @@
       "Reliance Industries",
       "Reliance Industries Ltd",
       "Reliance Industries Limited",
-      "RIL"
+      "RIL",
+      "Reliance",
+      "Reliance Jio",
+      "Reliance Retail",
+      "Jio"
     ],
     "important_businesses": [
       "Jio Platforms",
       "Reliance Retail",
-      "Reliance Jio",
-      "Reliance Oil and Gas"
+      "Reliance Jio Infocomm",
+      "Reliance Oil to Chemicals (O2C)",
+      "Reliance New Energy"
+    ]
+  },
+  "SBIN": {
+    "aliases": [
+      "SBI",
+      "State Bank of India",
+      "State Bank",
+      "SBI Bank",
+      "State Bank of India Ltd"
+    ],
+    "important_businesses": [
+      "SBI Cards",
+      "SBI Life Insurance",
+      "SBI Mutual Fund",
+      "SBI Capital Markets"
     ]
   },
   "TCS": {
     "aliases": [
       "Tata Consultancy Services",
       "Tata Consultancy Services Ltd",
+      "Tata Consultancy Services Limited",
       "TCS"
     ],
     "important_businesses": [
       "TCS BaNCS",
-      "Tata Digital"
+      "Tata Digital",
+      "Ignio"
     ]
   },
   "TATAMOTORS": {
     "aliases": [
       "Tata Motors",
       "Tata Motors Ltd",
-      "TaMo"
+      "Tata Motors Limited",
+      "TaMo",
+      "Tata Commercial Vehicles"
     ],
     "important_businesses": [
       "Jaguar Land Rover",
       "JLR",
-      "Tata Passenger Electric Mobility"
+      "Tata Passenger Electric Mobility",
+      "Tata Motors EV"
+    ]
+  },
+  "TATASTEEL": {
+    "aliases": [
+      "Tata Steel",
+      "Tata Steel Ltd",
+      "Tata Steel Limited"
+    ],
+    "important_businesses": [
+      "Tata Steel Europe",
+      "Tata Steel Kalinganagar"
+    ]
+  },
+  "TATAPOWER": {
+    "aliases": [
+      "Tata Power",
+      "Tata Power Company Limited",
+      "Tata Power Solar"
+    ],
+    "important_businesses": [
+      "Tata Power Renewables",
+      "TP Solar"
     ]
   },
   "INFY": {
@@ -44,17 +91,258 @@
     ],
     "important_businesses": [
       "Finacle",
-      "Infosys McCamish"
+      "Infosys McCamish",
+      "Infosys Cobalt",
+      "Topaz"
     ]
   },
   "HDFCBANK": {
     "aliases": [
       "HDFC Bank",
-      "HDFC Bank Ltd"
+      "HDFC Bank Ltd",
+      "HDFC Bank Limited",
+      "HDFC"
     ],
     "important_businesses": [
       "HDFC Securities",
-      "HDB Financial Services"
+      "HDB Financial Services",
+      "HDFC Capital"
+    ]
+  },
+  "ICICIBANK": {
+    "aliases": [
+      "ICICI Bank",
+      "ICICI Bank Ltd",
+      "ICICI Bank Limited",
+      "ICICI"
+    ],
+    "important_businesses": [
+      "ICICI Prudential Life Insurance",
+      "ICICI Lombard",
+      "ICICI Securities"
+    ]
+  },
+  "AXISBANK": {
+    "aliases": [
+      "Axis Bank",
+      "Axis Bank Ltd",
+      "Axis Bank Limited",
+      "Axis"
+    ],
+    "important_businesses": [
+      "Axis Capital",
+      "Axis Finance",
+      "Axis Mutual Fund"
+    ]
+  },
+  "KOTAKBANK": {
+    "aliases": [
+      "Kotak Mahindra Bank",
+      "Kotak Mahindra Bank Ltd",
+      "Kotak Bank",
+      "Kotak"
+    ],
+    "important_businesses": [
+      "Kotak Securities",
+      "Kotak Mahindra Prime",
+      "Kotak AMC"
+    ]
+  },
+  "BHARTIARTL": {
+    "aliases": [
+      "Bharti Airtel",
+      "Bharti Airtel Ltd",
+      "Bharti Airtel Limited",
+      "Airtel"
+    ],
+    "important_businesses": [
+      "Airtel Africa",
+      "Airtel Payments Bank",
+      "Airtel Business",
+      "Nxtra Data"
+    ]
+  },
+  "ITC": {
+    "aliases": [
+      "ITC",
+      "ITC Ltd",
+      "ITC Limited",
+      "Indian Tobacco Company"
+    ],
+    "important_businesses": [
+      "ITC Hotels",
+      "ITC Agri Business",
+      "ITC Paperboards"
+    ]
+  },
+  "LT": {
+    "aliases": [
+      "Larsen & Toubro",
+      "Larsen and Toubro",
+      "Larsen & Toubro Ltd",
+      "L&T",
+      "LT"
+    ],
+    "important_businesses": [
+      "L&T Infotech (LTIMindtree)",
+      "L&T Technology Services",
+      "L&T Finance Holdings"
+    ]
+  },
+  "HINDUNILVR": {
+    "aliases": [
+      "Hindustan Unilever",
+      "Hindustan Unilever Ltd",
+      "Hindustan Unilever Limited",
+      "HUL"
+    ],
+    "important_businesses": [
+      "Unilever India",
+      "HUL Personal Care",
+      "HUL Foods"
+    ]
+  },
+  "MARUTI": {
+    "aliases": [
+      "Maruti Suzuki",
+      "Maruti Suzuki India Limited",
+      "Maruti",
+      "Maruti Suzuki Ltd"
+    ],
+    "important_businesses": [
+      "Suzuki Motor Gujarat",
+      "Maruti True Value"
+    ]
+  },
+  "BAJFINANCE": {
+    "aliases": [
+      "Bajaj Finance",
+      "Bajaj Finance Limited",
+      "Bajaj Finance Ltd"
+    ],
+    "important_businesses": [
+      "Bajaj Housing Finance",
+      "Bajaj Financial Securities"
+    ]
+  },
+  "BAJAJFINSV": {
+    "aliases": [
+      "Bajaj Finserv",
+      "Bajaj Finserv Limited",
+      "Bajaj Finserv Ltd"
+    ],
+    "important_businesses": [
+      "Bajaj Allianz Life Insurance",
+      "Bajaj Allianz General Insurance"
+    ]
+  },
+  "SUNPHARMA": {
+    "aliases": [
+      "Sun Pharmaceutical Industries Limited",
+      "Sun Pharma",
+      "Sun Pharmaceutical",
+      "Sun Pharma Industries"
+    ],
+    "important_businesses": [
+      "Taro Pharmaceutical",
+      "Sun Pharma R&D"
+    ]
+  },
+  "WIPRO": {
+    "aliases": [
+      "Wipro",
+      "Wipro Limited",
+      "Wipro Ltd"
+    ],
+    "important_businesses": [
+      "Wipro Consumer Care",
+      "Wipro Infrastructure Engineering"
+    ]
+  },
+  "ZOMATO": {
+    "aliases": [
+      "Zomato",
+      "Zomato Limited",
+      "Zomato Ltd"
+    ],
+    "important_businesses": [
+      "Blinkit",
+      "Hyperpure",
+      "Feeding India"
+    ]
+  },
+  "PAYTM": {
+    "aliases": [
+      "One97 Communications Limited",
+      "Paytm",
+      "One97 Communications",
+      "Paytm Payments Bank"
+    ],
+    "important_businesses": [
+      "Paytm Mall",
+      "Paytm Money"
+    ]
+  },
+  "ADANIENT": {
+    "aliases": [
+      "Adani Enterprises",
+      "Adani Enterprises Limited",
+      "Adani Enterprises Ltd",
+      "Adani"
+    ],
+    "important_businesses": [
+      "Adani New Industries",
+      "Adani Airports",
+      "Adani Road Transport",
+      "Adani Data Center"
+    ]
+  },
+  "ADANIPORTS": {
+    "aliases": [
+      "Adani Ports and Special Economic Zone Limited",
+      "Adani Ports",
+      "APSEZ"
+    ],
+    "important_businesses": [
+      "Mundra Port",
+      "Adani Logistics"
+    ]
+  },
+  "COALINDIA": {
+    "aliases": [
+      "Coal India",
+      "Coal India Limited",
+      "Coal India Ltd",
+      "CIL"
+    ],
+    "important_businesses": [
+      "Eastern Coalfields",
+      "Bharat Coking Coal",
+      "Central Coalfields"
+    ]
+  },
+  "ONGC": {
+    "aliases": [
+      "Oil and Natural Gas Corporation",
+      "ONGC",
+      "Oil & Natural Gas Corp"
+    ],
+    "important_businesses": [
+      "ONGC Videsh",
+      "MRPL",
+      "HPCL"
+    ]
+  },
+  "NTPC": {
+    "aliases": [
+      "NTPC",
+      "NTPC Limited",
+      "NTPC Ltd",
+      "National Thermal Power Corporation"
+    ],
+    "important_businesses": [
+      "NTPC Green Energy",
+      "NTPC Vidyut Vyapar"
     ]
   }
 }

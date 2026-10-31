@@ -1,14 +1,20 @@
 """
-resolver.py - Equity Resolver Engine
+resolver.py - Robust Typo-Tolerant Equity Resolver Engine
 
 Primary Responsibilities:
-1. Accept raw user queries: e.g., 'Reliance', 'RIL', 'tata motor', 'INFY'.
-2. Resolve to canonical EquityProfile using:
-   - Exact ticker match
-   - Exact alias match
-   - Fuzzy name matching against offline NSE listed companies master list (with rapidfuzz or difflib fallback)
-3. Flag ambiguous queries (e.g., 'Tata' matching multiple distinct entities).
-4. Cache resolved profiles locally in SQLite to prevent redundant lookups.
+1. Accept any user query, including typos, misspellings, letter transpositions, and informal slang:
+   - 'Reliance', 'reliance', 'relaince', 'reLaince', 'Relancie' -> RELIANCE
+   - 'SBI', 'SBI Bank', 'State Bank' -> SBIN
+   - 'Tata Motors', 'tata motor', 'Tatamotrs', 'TaMo' -> TATAMOTORS
+   - 'INFY', 'infosys', 'Infsys' -> INFY
+   - 'L&T', 'Larsen', 'Larsen & Toubro' -> LT
+   - 'HDFC', 'HDFC Bank' -> HDFCBANK
+2. Full NSE listed universe coverage: ~2,600+ equities loaded from data/seed/nse_listed_companies.csv.
+3. Multi-tier typo matching:
+   - Tier 1: Exact ticker & alias dictionary (O(1))
+   - Tier 2: Acronym / initials matching (e.g. SBI -> State Bank of India)
+   - Tier 3: Damerau-Levenshtein transposition-aware edit distance & multi-token alignment
+4. Local SQLite cache for instant re-resolution.
 """
 
 from typing import Optional, List, Dict, Any, Tuple
@@ -17,6 +23,7 @@ import csv
 import json
 import sqlite3
 import difflib
+import re
 from pathlib import Path
 
 from .profile import EquityProfile
@@ -26,6 +33,52 @@ try:
     HAS_RAPIDFUZZ = True
 except ImportError:
     HAS_RAPIDFUZZ = False
+
+
+# Words that do not distinguish companies
+STOPWORDS = {
+    "limited", "ltd", "ltd.", "india", "ind", "corp", "corporation",
+    "company", "co", "enterprises", "industries", "holdings", "group", "the"
+}
+
+
+def damerau_levenshtein_distance(s1: str, s2: str) -> int:
+    """
+    Computes Damerau-Levenshtein distance (accounts for insertions, deletions,
+    substitutions, and transpositions of adjacent characters).
+    """
+    d = {}
+    len1, len2 = len(s1), len(s2)
+    for i in range(-1, len1 + 1):
+        d[(i, -1)] = i + 1
+    for j in range(-1, len2 + 1):
+        d[(-1, j)] = j + 1
+
+    for i in range(len1):
+        for j in range(len2):
+            cost = 0 if s1[i] == s2[j] else 1
+            d[(i, j)] = min(
+                d[(i - 1, j)] + 1,        # deletion
+                d[(i, j - 1)] + 1,        # insertion
+                d[(i - 1, j - 1)] + cost  # substitution
+            )
+            if i and j and s1[i] == s2[j - 1] and s1[i - 1] == s2[j]:
+                d[(i, j)] = min(d[(i, j)], d[(i - 2, j - 2)] + cost)  # transposition
+
+    return d[(len1 - 1, len2 - 1)]
+
+
+def normalize_text(text: str) -> str:
+    """Lowercases, removes special characters, and strips extra spaces."""
+    cleaned = re.sub(r"[^\w\s]", " ", text.lower())
+    return " ".join(cleaned.split())
+
+
+def extract_core_tokens(text: str) -> List[str]:
+    """Extracts non-stopword tokens from a company name."""
+    words = normalize_text(text).split()
+    meaningful = [w for w in words if w not in STOPWORDS]
+    return meaningful if meaningful else words
 
 
 class EquityResolver:
@@ -44,34 +97,42 @@ class EquityResolver:
         self.aliases_json_path = Path(aliases_json_path) if aliases_json_path else base_dir / "data" / "seed" / "equity_aliases_seed.json"
         self.cache_db_path = Path(cache_db_path) if cache_db_path else base_dir / "data" / "cache" / "equity_cache.sqlite"
 
-        self.equities_by_symbol: Dict[str, Dict[str, str]] = {}
-        self.equities_by_name: Dict[str, Dict[str, str]] = {}
+        self.equities_by_symbol: Dict[str, Dict[str, Any]] = {}
         self.alias_map: Dict[str, Dict[str, Any]] = {}
+        self.acronym_map: Dict[str, str] = {}
 
         self._load_seed_data()
         self._init_cache()
 
     def _load_seed_data(self) -> None:
-        """Loads static NSE equities seed and curated aliases."""
+        """Loads all NSE equities and curated alias seeds."""
         if self.seed_csv_path.exists():
             with open(self.seed_csv_path, mode="r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
-                for row in reader:
-                    symbol = (row.get("SYMBOL") or "").strip().upper()
-                    name = (row.get("NAME OF COMPANY") or "").strip()
-                    isin = (row.get("ISIN NUMBER") or "").strip()
-                    series = (row.get("SERIES") or "").strip()
+                for raw_row in reader:
+                    # Strip whitespace from keys and values
+                    row = {k.strip(): (v.strip() if v else "") for k, v in raw_row.items() if k}
+                    symbol = (row.get("SYMBOL") or "").upper()
+                    name = row.get("NAME OF COMPANY") or ""
+                    isin = row.get("ISIN NUMBER") or ""
+                    series = row.get("SERIES") or ""
 
                     entry = {
                         "symbol": symbol,
                         "name": name,
                         "isin": isin,
-                        "series": series
+                        "series": series,
+                        "core_tokens": extract_core_tokens(name)
                     }
                     if symbol:
                         self.equities_by_symbol[symbol] = entry
-                    if name:
-                        self.equities_by_name[name.lower()] = entry
+
+                    # Generate acronym from core tokens (e.g. State Bank of India -> sbi)
+                    words = [w for w in re.findall(r"[A-Za-z]+", name) if w.lower() not in {"of", "and", "the"}]
+                    if len(words) >= 2:
+                        acronym = "".join(w[0] for w in words).lower()
+                        if len(acronym) >= 2 and acronym not in self.acronym_map:
+                            self.acronym_map[acronym] = symbol
 
         if self.aliases_json_path.exists():
             try:
@@ -103,8 +164,7 @@ class EquityResolver:
             pass
 
     def _get_from_cache(self, query: str) -> Optional[EquityProfile]:
-        """Fetch profile from SQLite cache if previously resolved."""
-        clean_q = query.strip().lower()
+        clean_q = normalize_text(query)
         try:
             with sqlite3.connect(self.cache_db_path) as conn:
                 cursor = conn.cursor()
@@ -128,8 +188,7 @@ class EquityResolver:
         return None
 
     def _save_to_cache(self, query: str, profile: EquityProfile) -> None:
-        """Persist newly resolved profile to SQLite cache."""
-        clean_q = query.strip().lower()
+        clean_q = normalize_text(query)
         try:
             with sqlite3.connect(self.cache_db_path) as conn:
                 cursor = conn.cursor()
@@ -152,7 +211,6 @@ class EquityResolver:
             pass
 
     def _build_profile_from_symbol(self, symbol: str) -> EquityProfile:
-        """Assembles EquityProfile using symbol, seed CSV info, and alias mapping."""
         seed_info = self.equities_by_symbol.get(symbol.upper(), {})
         alias_info = self.alias_map.get(symbol.upper(), {})
 
@@ -172,74 +230,130 @@ class EquityResolver:
             important_businesses=important_businesses
         )
 
-    def _compute_similarity(self, a: str, b: str) -> float:
-        """Calculates normalized string similarity score between 0 and 100."""
-        a_clean = a.lower().strip()
-        b_clean = b.lower().strip()
-        if a_clean == b_clean:
-            return 100.0
-
-        if HAS_RAPIDFUZZ:
-            return float(fuzz.token_set_ratio(a_clean, b_clean))
-        else:
-            matcher = difflib.SequenceMatcher(None, a_clean, b_clean)
-            ratio = matcher.ratio() * 100.0
-            if a_clean in b_clean or b_clean in a_clean:
-                ratio = max(ratio, 85.0)
-            return ratio
-
-    def resolve(self, query: str, threshold: float = 70.0) -> Optional[EquityProfile]:
+    def _score_candidate(self, query_norm: str, query_tokens: List[str], symbol: str, entry: Dict[str, Any]) -> float:
         """
-        Main resolution pipeline.
-        1. Check cache
-        2. Exact ticker match (e.g. 'RELIANCE', 'TCS')
-        3. Exact alias match (e.g. 'RIL' -> 'RELIANCE', 'Tata Motors' -> 'TATAMOTORS')
-        4. Fuzzy matching across master company names and symbols
-        5. Ambiguity detection
+        Sophisticated candidate scoring:
+        - Ticker edit distance
+        - Token-level matching
+        - Curated alias matching
+        - Multi-word query alignment
         """
-        if not query or not query.strip():
+        sym_norm = normalize_text(symbol)
+        max_sym_len = max(len(query_norm), len(sym_norm))
+        sym_dist = damerau_levenshtein_distance(query_norm, sym_norm)
+        sym_sim = (1.0 - (sym_dist / max_sym_len)) * 100.0 if max_sym_len else 0.0
+
+        # Exact or near ticker match gets huge boost
+        if sym_dist == 0:
+            return 150.0
+
+        core_tokens = entry.get("core_tokens", [])
+        joined_core = "".join(core_tokens)
+        joined_dist = damerau_levenshtein_distance(query_norm, joined_core)
+        joined_max = max(len(query_norm), len(joined_core))
+        joined_sim = (1.0 - (joined_dist / joined_max)) * 100.0 if joined_max else 0.0
+
+        # Check query tokens against company core tokens
+        token_sims = []
+        for qt in query_tokens:
+            best_t = max([
+                (1.0 - (damerau_levenshtein_distance(qt, ct) / max(len(qt), len(ct)))) * 100.0
+                for ct in core_tokens
+            ] or [0.0])
+            token_sims.append(best_t)
+
+        avg_token_sim = sum(token_sims) / len(token_sims) if token_sims else 0.0
+        all_tokens_high = all(s >= 75.0 for s in token_sims) if token_sims else False
+
+        # Alias matching
+        is_curated = symbol in self.alias_map
+        alias_sims = []
+        if is_curated:
+            for a in self.alias_map[symbol].get("aliases", []):
+                a_norm = normalize_text(a)
+                a_dist = damerau_levenshtein_distance(query_norm, a_norm)
+                a_max = max(len(query_norm), len(a_norm))
+                alias_sims.append((1.0 - (a_dist / a_max)) * 100.0 if a_max else 0.0)
+
+                # Joined alias without spaces
+                a_joined = "".join(a_norm.split())
+                aj_dist = damerau_levenshtein_distance(query_norm, a_joined)
+                aj_max = max(len(query_norm), len(a_joined))
+                alias_sims.append((1.0 - (aj_dist / aj_max)) * 100.0 if aj_max else 0.0)
+
+        best_alias_sim = max(alias_sims or [0.0])
+
+        score = max(sym_sim, avg_token_sim, joined_sim, best_alias_sim)
+
+        # Multi-word full match bonus (e.g. 'tata' AND 'motors')
+        if all_tokens_high and len(query_tokens) > 1:
+            score += 25.0
+
+        # Curated flagship equity boost
+        if is_curated:
+            score += 15.0
+
+        # Prefer mainline Series EQ equities over illiquid BE/BZ
+        if entry.get("series") == "EQ":
+            score += 3.0
+
+        return score
+
+    def resolve(self, query: str, threshold: float = 65.0) -> Optional[EquityProfile]:
+        """
+        Main resolution pipeline with multi-tier matching:
+        1. Cache check
+        2. Exact Ticker / Exact Alias (O(1))
+        3. Acronym / Initials lookup
+        4. Typo-tolerant candidate ranking
+        """
+        if not query or not str(query).strip():
             return None
 
-        clean_q = query.strip()
-        upper_q = clean_q.upper()
-        lower_q = clean_q.lower()
+        clean_q = normalize_text(query)
+        raw_upper = "".join(ch for ch in query.upper() if ch.isalnum() or ch == '&')
+        q_tokens = extract_core_tokens(clean_q)
 
-        # Step 1: Cache
+        # 1. Check Cache
         cached = self._get_from_cache(clean_q)
         if cached:
             return cached
 
-        # Step 2: Exact Ticker
-        if upper_q in self.equities_by_symbol:
-            profile = self._build_profile_from_symbol(upper_q)
+        # 2. Exact Ticker Match (case-insensitive)
+        if raw_upper in self.equities_by_symbol:
+            profile = self._build_profile_from_symbol(raw_upper)
             self._save_to_cache(clean_q, profile)
             return profile
 
-        # Step 3: Exact Alias
+        # 3. Exact Alias Match (e.g. 'RIL' -> 'RELIANCE', 'SBI' -> 'SBIN', 'L&T' -> 'LT')
         for ticker, data in self.alias_map.items():
             for alias in data.get("aliases", []):
-                if alias.lower() == lower_q:
+                if normalize_text(alias) == clean_q or alias.upper() == raw_upper:
                     profile = self._build_profile_from_symbol(ticker)
                     self._save_to_cache(clean_q, profile)
                     return profile
 
-        # Step 4: Fuzzy Match against company names and symbols
+        # 4. Check Acronym Map (e.g. 'sbi' -> 'SBIN', 'itc' -> 'ITC')
+        if clean_q in self.acronym_map:
+            profile = self._build_profile_from_symbol(self.acronym_map[clean_q])
+            self._save_to_cache(clean_q, profile)
+            return profile
+
+        # 5. Fuzzy & Typo Matching across all listed companies
         scored_candidates: List[Tuple[float, str]] = []
+
         for symbol, entry in self.equities_by_symbol.items():
-            name = entry["name"]
-            score_name = self._compute_similarity(clean_q, name)
-            score_sym = self._compute_similarity(clean_q, symbol)
-            max_score = max(score_name, score_sym)
+            score = self._score_candidate(clean_q, q_tokens, symbol, entry)
+            if score >= threshold:
+                scored_candidates.append((score, symbol))
 
-            # Check aliases as well
-            if symbol in self.alias_map:
-                for alias in self.alias_map[symbol].get("aliases", []):
-                    score_alias = self._compute_similarity(clean_q, alias)
-                    if score_alias > max_score:
-                        max_score = score_alias
-
-            if max_score >= threshold:
-                scored_candidates.append((max_score, symbol))
+        # Also check alias map entries that might not be in CSV
+        for ticker in self.alias_map.keys():
+            if ticker not in self.equities_by_symbol:
+                mock_entry = {"symbol": ticker, "name": ticker, "core_tokens": [normalize_text(ticker)], "series": "EQ"}
+                score = self._score_candidate(clean_q, q_tokens, ticker, mock_entry)
+                if score >= threshold:
+                    scored_candidates.append((score, ticker))
 
         if not scored_candidates:
             return None
@@ -247,13 +361,6 @@ class EquityResolver:
         # Sort descending by score
         scored_candidates.sort(key=lambda x: x[0], reverse=True)
         best_score, best_symbol = scored_candidates[0]
-
-        # Step 5: Check Ambiguity
-        if len(scored_candidates) > 1:
-            second_score, second_symbol = scored_candidates[1]
-            # If the user typed an ambiguous query like 'Tata' matching multiple Tata firms closely
-            if abs(best_score - second_score) < 5.0 and best_score < 90.0:
-                pass  # Pick the highest ranked or allow specialized ambiguity handling
 
         profile = self._build_profile_from_symbol(best_symbol)
         self._save_to_cache(clean_q, profile)
