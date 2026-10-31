@@ -8,6 +8,8 @@ env/
 venv/
 .venv/
 ENV/
+.env
+.env.*
 build/
 develop-eggs/
 dist/
