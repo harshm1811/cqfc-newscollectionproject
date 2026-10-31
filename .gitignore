@@ -1,2 +1,22 @@
 __pycache__/
 *.py[cod]
+# Pytest
+.pytest_cache/
+
+# Virtual environments
+venv/
+.venv/
+
+# Environment variables and secrets
+.env
+.env.*
+
+# IDE settings
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp

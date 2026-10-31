@@ -1,0 +1,7 @@
+# Exponential decay assumptions; tune these against downstream objectives.
+half_life_hours: 24.0
+timestamp_fields:
+  - first_article_at
+  - published_at
+  - first_seen_at
+missing_timestamp_weight: 1.0

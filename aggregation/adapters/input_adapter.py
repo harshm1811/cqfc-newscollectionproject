@@ -44,7 +44,7 @@ class InputAdapterConfig:
     mock_fields: tuple[str, ...] = field(default=("importance_score", "source_quality", "time_weight"))
 
 
-def adapt_enriched_outputs(articles, events, mappings, *, person2_by_event=None,
+def adapt_enriched_outputs(articles, events, mappings, *, event_scores=None,
                            relevance_by_article=None, config=None):
     """Return normalized ``(articles_df, events_df, mappings_df)``.
 
@@ -53,7 +53,7 @@ def adapt_enriched_outputs(articles, events, mappings, *, person2_by_event=None,
     remains available for source-agreement calculations.
     """
     config = config or InputAdapterConfig()
-    person2_by_event = person2_by_event or {}
+    event_scores = event_scores or {}
     relevance_by_article = relevance_by_article or {}
     article_rows = [_sentiment(_dict(x)) for x in articles]
     event_rows = [_dict(x) for x in events]
@@ -73,7 +73,7 @@ def adapt_enriched_outputs(articles, events, mappings, *, person2_by_event=None,
         if field not in edf:
             edf[field] = default
         if not edf.empty:
-            edf[field] = edf.apply(lambda r: person2_by_event.get(r.get("event_id"), {}).get(field, r.get(field) if pd.notna(r.get(field)) else default), axis=1)
+            edf[field] = edf.apply(lambda r: event_scores.get(r.get("event_id"), {}).get(field, r.get(field) if pd.notna(r.get(field)) else default), axis=1)
     # Relevance is article/equity scoped upstream. Reduce mapped article
     # relevance to an event-level mean for the event contribution formula.
     if not edf.empty and not adf.empty and not mdf.empty and "relevance" in adf:
@@ -85,5 +85,5 @@ def adapt_enriched_outputs(articles, events, mappings, *, person2_by_event=None,
     elif not edf.empty and "relevance" not in edf:
         edf["relevance"] = config.mock_relevance
     if not edf.empty:
-        edf["person2_is_mock"] = edf.apply(lambda r: any(r.get(k) == d for k, d in (("importance_score", config.mock_importance), ("source_quality", config.mock_source_quality), ("time_weight", config.mock_time_weight)) if k not in person2_by_event.get(r.get("event_id"), {})), axis=1)
+        edf["has_mock_scores"] = edf.apply(lambda r: any(r.get(k) == d for k, d in (("importance_score", config.mock_importance), ("source_quality", config.mock_source_quality), ("time_weight", config.mock_time_weight)) if k not in event_scores.get(r.get("event_id"), {})), axis=1)
     return adf, edf, mdf

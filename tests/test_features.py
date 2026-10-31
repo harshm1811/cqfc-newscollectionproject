@@ -2,9 +2,9 @@ import unittest
 
 import pandas as pd
 
-from feature_engineering.adapters.input_adapter import adapt_enriched_outputs
-from feature_engineering.pipeline import FeatureConfig, build_feature_dataset
-from feature_engineering.sentiment_index import aggregate_event_sentiment
+from aggregation.adapters.input_adapter import adapt_enriched_outputs
+from aggregation.feature_engine import FeatureConfig, build_feature_dataset
+from aggregation.sentiment_index import aggregate_event_sentiment
 
 
 class FeatureEngineeringTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class FeatureEngineeringTests(unittest.TestCase):
         )
         self.assertEqual(a.iloc[0].article_id, "a")
         self.assertEqual(e.iloc[0].event_id, "e")
-        self.assertTrue(e.iloc[0].person2_is_mock)
+        self.assertTrue(e.iloc[0].has_mock_scores)
         self.assertEqual(m.iloc[0].event_id, "e")
 
 

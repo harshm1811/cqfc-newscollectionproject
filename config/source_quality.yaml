@@ -1,0 +1,28 @@
+# Experimental starting assumptions. Calibrate these against labeled source data.
+category_weights:
+  exchange_filing: 1.00
+  regulatory_announcement: 0.98
+  official_company_announcement: 0.95
+  investor_relations: 0.92
+  major_financial_publication: 0.82
+  general_publication: 0.65
+  aggregator: 0.40
+  unknown: 0.50
+
+source_type_categories:
+  exchange: exchange_filing
+  exchange_filing: exchange_filing
+  regulatory: regulatory_announcement
+  regulatory_announcement: regulatory_announcement
+  company_announcement: official_company_announcement
+  official: official_company_announcement
+  investor_relations: investor_relations
+  major_financial_publication: major_financial_publication
+  financial_publication: major_financial_publication
+  publication: general_publication
+  aggregator: aggregator
+
+# Explicit source-name rules. Add organization names here as needed.
+source_categories: {}
+primary_confirmation_bonus: 0.05
+independent_confirmation_bonus: 0.03
