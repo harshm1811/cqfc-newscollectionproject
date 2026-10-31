@@ -4,13 +4,13 @@
 
 ---
 
-## 📌 Overview
+## Overview
 
 Group 1 is the foundational ingestion layer of the Equity News Intelligence & Sentiment Engine. It takes free-form, noisy user inputs (e.g., `"relaince"`, `"SBI"`, `"Tata Motors"`), resolves them into canonical publicly listed equities across all **2,620+ active NSE companies**, generates targeted multi-category queries, and concurrently collects hundreds of candidate articles, exchange announcements, and regulatory releases from free public sources.
 
 ---
 
-## 🚀 Quickstart: Running on Any Device
+## Quickstart: Running on Any Device
 
 ### Prerequisites
 * Python 3.9+ (Python 3.10–3.12 recommended)
@@ -90,7 +90,7 @@ cd News_Collect
 
 ---
 
-## 🤝 Integration Guide for Downstream Groups
+## Integration Guide for Downstream Groups
 
 ### How Group 4 (Integration / Dashboard) Calls Group 1
 Import the master pipeline entrypoint from `pipeline.py`:
@@ -160,7 +160,7 @@ data/raw/samples/mock_raw_articles.json
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```text
 News_Collect/
@@ -199,7 +199,7 @@ News_Collect/
 
 ---
 
-## 🧪 Testing & Verification
+## Testing & Verification
 
 Run the test suite:
 ```bash
@@ -227,5 +227,5 @@ ALL TESTS PASSED WITH 100% SUCCESS!
 
 ---
 
-## 📄 License
+## License
 This repository is part of the Equity News Intelligence & Sentiment Engine academic/quant research initiative.
