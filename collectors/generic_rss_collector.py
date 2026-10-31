@@ -6,7 +6,7 @@ Responsibilities:
     * Economic Times (Markets, Stocks)
     * Livemint (Companies, Industry)
     * Business Standard (Finance)
-- Filters articles containing company name, ticker, or aliases in title/description.
+    * Yahoo Finance Equity Feed ({TICKER}.NS)
 - Emits RawArticleRecord objects with source_type="NEWS_RSS" or "AGGREGATOR".
 """
 
@@ -28,7 +28,7 @@ except ImportError:
 
 class GenericRSSCollector(BaseCollector):
     """
-    Scrapes general public financial RSS feeds and filters for equity mentions.
+    Scrapes public financial RSS feeds and equity-specific feeds for company mentions.
     """
 
     def __init__(self, raw_data_dir: str = "data/raw", config: Optional[Dict[str, Any]] = None):
@@ -41,38 +41,19 @@ class GenericRSSCollector(BaseCollector):
         ])
 
     def _matches_equity(self, text: str, profile: EquityProfile) -> bool:
-        """Determines if the text mentions the company ticker, name, or known aliases."""
         t_lower = text.lower()
         if profile.ticker.lower() in t_lower:
             return True
-        if profile.company_name.lower() in t_lower:
+        clean_name = profile.company_name.lower().replace(" limited", "").replace(" ltd", "").strip()
+        if clean_name in t_lower:
             return True
         for alias in profile.aliases:
-            if alias.lower() in t_lower:
+            if len(alias) >= 3 and alias.lower() in t_lower:
                 return True
         for sub in profile.important_businesses:
-            if sub.lower() in t_lower:
+            if len(sub) >= 3 and sub.lower() in t_lower:
                 return True
         return False
-
-    def _parse_xml_fallback(self, xml_content: str, default_source: str) -> List[Dict[str, Any]]:
-        items = []
-        try:
-            root = ET.fromstring(xml_content)
-            channel = root.find("channel")
-            if channel is None:
-                return items
-            for item in channel.findall("item"):
-                items.append({
-                    "title": item.findtext("title") or "",
-                    "link": item.findtext("link") or "",
-                    "published": item.findtext("pubDate") or "",
-                    "summary": item.findtext("description") or "",
-                    "source": default_source
-                })
-        except Exception:
-            pass
-        return items
 
     def collect(
         self,
@@ -82,24 +63,34 @@ class GenericRSSCollector(BaseCollector):
         queries: Optional[List[str]] = None
     ) -> List[RawArticleRecord]:
         """
-        Parses configured external RSS feeds and filters for profile mentions.
+        Parses configured external RSS feeds and equity ticker feeds.
         """
         self.logger.info(f"Starting Generic RSS collection for {profile.ticker}")
         records: List[RawArticleRecord] = []
         seen_urls = set()
 
-        for feed_info in self.feeds:
+        # Combine static feeds + dynamic Yahoo Finance ticker feed
+        all_feeds = list(self.feeds)
+        all_feeds.append({
+            "name": f"Yahoo Finance ({profile.ticker})",
+            "url": f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={profile.ticker}.NS&region=IN&lang=en-IN"
+        })
+
+        for feed_info in all_feeds:
             feed_name = feed_info.get("name", "Financial RSS")
             feed_url = feed_info.get("url")
             if not feed_url:
                 continue
 
             try:
-                resp = self.session.get(feed_url, timeout=10)
+                resp = self.session.get(feed_url, timeout=8)
                 if resp.status_code != 200:
                     continue
 
                 raw_xml = resp.text
+                if "<item>" not in raw_xml:
+                    continue
+
                 self.save_raw_payload(profile.ticker, raw_xml, identifier=feed_name.replace(" ", "_"))
 
                 parsed_items = []
@@ -114,21 +105,30 @@ class GenericRSSCollector(BaseCollector):
                             "source": feed_name
                         })
                 else:
-                    parsed_items = self._parse_xml_fallback(raw_xml, feed_name)
+                    root = ET.fromstring(raw_xml)
+                    for item in root.findall(".//item"):
+                        parsed_items.append({
+                            "title": item.findtext("title") or "",
+                            "link": item.findtext("link") or "",
+                            "published": item.findtext("pubDate") or "",
+                            "summary": item.findtext("description") or "",
+                            "source": feed_name
+                        })
 
                 retrieved_now = get_current_utc_iso()
 
                 for item in parsed_items:
-                    link = item.get("link", "")
-                    title = item.get("title", "")
-                    summary = item.get("summary", "")
+                    link = item.get("link", "").strip()
+                    title = item.get("title", "").strip()
+                    summary = item.get("summary", "").strip()
 
-                    if not link or link in seen_urls:
+                    if not link or not title or link in seen_urls:
                         continue
 
-                    # Filter for equity relevance in title or summary
-                    combined_text = f"{title} {summary}"
-                    if not self._matches_equity(combined_text, profile):
+                    # If it's a general front-page feed, filter for equity match.
+                    # If it's an equity-specific ticker feed, all articles belong to this equity!
+                    is_equity_feed = f"{profile.ticker}.NS" in feed_url
+                    if not is_equity_feed and not self._matches_equity(f"{title} {summary}", profile):
                         continue
 
                     seen_urls.add(link)
@@ -136,8 +136,8 @@ class GenericRSSCollector(BaseCollector):
                     record = RawArticleRecord(
                         company_name=profile.company_name,
                         ticker=profile.ticker,
-                        title=title.strip(),
-                        description=summary.strip(),
+                        title=title,
+                        description=summary,
                         url=link,
                         source=feed_name,
                         source_type="NEWS_RSS",
@@ -150,7 +150,7 @@ class GenericRSSCollector(BaseCollector):
                     records.append(record)
 
             except Exception as e:
-                self.logger.warning(f"Error fetching generic feed '{feed_name}': {e}")
+                self.logger.debug(f"Feed '{feed_name}' notice: {e}")
 
         self.logger.info(f"Generic RSS collected {len(records)} relevant items for {profile.ticker}")
         return records

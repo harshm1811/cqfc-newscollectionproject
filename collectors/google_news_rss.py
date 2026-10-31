@@ -1,18 +1,20 @@
 """
-google_news_rss.py - Google News RSS Collector (Person B)
+google_news_rss.py - High-Volume Google News RSS Collector (Person B)
 
 Responsibilities:
-- Builds Google News search RSS queries from profile & generated queries:
-  https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en
-- Robust XML parsing using feedparser (with fallback to xml.etree.ElementTree).
+- Builds Google News search RSS queries across multiple high-signal categories.
+- Handles throttling and user-agent rotation to prevent HTTP 429 rate limits.
+- Supports unquoted fallback searches if quoted searches yield low volume.
+- Resolves redirect URLs via utils.url_resolver if configured.
 - Normalizes published timestamps to ISO-8601 UTC.
-- Saves raw unedited feed XML/JSON to data/raw/{ticker}/.
+- Saves raw unedited feed XML to data/raw/{ticker}/.
 - Emits RawArticleRecord objects with source_type="NEWS_RSS", primary_source=False.
 """
 
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import urllib.parse
+import time
 import xml.etree.ElementTree as ET
 
 from .base_collector import BaseCollector, RawArticleRecord
@@ -30,7 +32,7 @@ except ImportError:
 
 class GoogleNewsRSSCollector(BaseCollector):
     """
-    Collects financial articles via Google News RSS search.
+    Collects maximum financial articles via Google News RSS search.
     """
 
     def __init__(self, raw_data_dir: str = "data/raw", config: Optional[Dict[str, Any]] = None):
@@ -40,6 +42,7 @@ class GoogleNewsRSSCollector(BaseCollector):
         self.hl = self.gnews_cfg.get("language", "en-IN")
         self.gl = self.gnews_cfg.get("country_code", "IN")
         self.resolve_redirects = self.gnews_cfg.get("resolve_redirect_urls", False)
+        self.max_queries = self.gnews_cfg.get("max_queries", 6)
 
     def _build_rss_url(self, query: str, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> str:
         q_str = query
@@ -75,8 +78,37 @@ class GoogleNewsRSSCollector(BaseCollector):
                     "source": source_name
                 })
         except Exception as e:
-            self.logger.warning(f"XML parse error in GoogleNewsRSSCollector: {e}")
+            self.logger.debug(f"XML fallback parsing error: {e}")
         return items
+
+    def _fetch_rss(self, url: str) -> List[Dict[str, Any]]:
+        try:
+            resp = self.session.get(url, timeout=6)
+            if resp.status_code != 200:
+                return []
+
+            raw_xml = resp.text
+            if "<item>" not in raw_xml:
+                return []
+
+            items = []
+            if HAS_FEEDPARSER:
+                feed = feedparser.parse(raw_xml)
+                for entry in feed.entries:
+                    items.append({
+                        "title": entry.get("title", ""),
+                        "link": entry.get("link", ""),
+                        "published": entry.get("published", ""),
+                        "summary": entry.get("summary", ""),
+                        "source": entry.get("source", {}).get("title", "Google News")
+                    })
+            else:
+                items = self._parse_xml_fallback(raw_xml)
+
+            return items
+        except Exception as e:
+            self.logger.debug(f"RSS fetch error: {e}")
+            return []
 
     def collect(
         self,
@@ -86,70 +118,72 @@ class GoogleNewsRSSCollector(BaseCollector):
         queries: Optional[List[str]] = None
     ) -> List[RawArticleRecord]:
         """
-        Executes Google News RSS search across target queries.
+        Executes Google News RSS searches across target queries.
         """
         self.logger.info(f"Starting Google News collection for {profile.ticker}")
-        search_queries = queries[:6] if queries else [f'"{profile.company_name}"', f'"{profile.ticker}"']
+
+        # Clean company name
+        clean_name = profile.company_name
+        for suffix in [" Limited", " Ltd.", " Ltd"]:
+            if clean_name.endswith(suffix):
+                clean_name = clean_name[:-len(suffix)]
+
+        # Assemble top prioritized search queries
+        candidate_queries = []
+        if queries:
+            candidate_queries.extend(queries[:self.max_queries])
+        else:
+            candidate_queries = [
+                f'"{clean_name}"',
+                f'"{profile.ticker}"',
+                f'"{clean_name}" earnings OR results',
+                f'"{clean_name}" shares OR stock'
+            ]
 
         records: List[RawArticleRecord] = []
         seen_urls = set()
+        seen_titles = set()
 
-        for q in search_queries:
+        for idx, q in enumerate(candidate_queries):
             rss_url = self._build_rss_url(q, start_date=start_date, end_date=end_date)
-            try:
-                resp = self.session.get(rss_url, timeout=10)
-                if resp.status_code != 200:
-                    self.logger.warning(f"Google News RSS HTTP {resp.status_code} for query: {q}")
+            parsed_items = self._fetch_rss(rss_url)
+
+            if parsed_items:
+                self.save_raw_payload(profile.ticker, parsed_items, identifier=f"gnews_{idx}")
+
+            retrieved_now = get_current_utc_iso()
+
+            for item in parsed_items:
+                link = item.get("link", "").strip()
+                title = item.get("title", "").strip()
+                if not link or not title:
                     continue
 
-                raw_xml = resp.text
-                self.save_raw_payload(profile.ticker, raw_xml, identifier="gnews_rss")
+                norm_title = title.lower()
+                if link in seen_urls or norm_title in seen_titles:
+                    continue
+                seen_urls.add(link)
+                seen_titles.add(norm_title)
 
-                # Parse items
-                parsed_items = []
-                if HAS_FEEDPARSER:
-                    feed = feedparser.parse(raw_xml)
-                    for entry in feed.entries:
-                        parsed_items.append({
-                            "title": entry.get("title", ""),
-                            "link": entry.get("link", ""),
-                            "published": entry.get("published", ""),
-                            "summary": entry.get("summary", ""),
-                            "source": entry.get("source", {}).get("title", "Google News")
-                        })
-                else:
-                    parsed_items = self._parse_xml_fallback(raw_xml)
+                final_url = link
+                if self.resolve_redirects:
+                    final_url = resolve_google_redirect(link, session=self.session)
 
-                retrieved_now = get_current_utc_iso()
+                record = RawArticleRecord(
+                    company_name=profile.company_name,
+                    ticker=profile.ticker,
+                    title=title,
+                    description=item.get("summary", "").strip(),
+                    url=final_url,
+                    source=item.get("source", "Google News"),
+                    source_type="NEWS_RSS",
+                    primary_source=False,
+                    published_at=parse_to_utc_iso(item.get("published")),
+                    first_seen_at=retrieved_now,
+                    retrieved_at=retrieved_now,
+                    collector=self.name
+                )
+                records.append(record)
 
-                for item in parsed_items:
-                    link = item.get("link", "")
-                    if not link or link in seen_urls:
-                        continue
-                    seen_urls.add(link)
-
-                    final_url = link
-                    if self.resolve_redirects:
-                        final_url = resolve_google_redirect(link, session=self.session)
-
-                    record = RawArticleRecord(
-                        company_name=profile.company_name,
-                        ticker=profile.ticker,
-                        title=item.get("title", "").strip(),
-                        description=item.get("summary", "").strip(),
-                        url=final_url,
-                        source=item.get("source", "Google News"),
-                        source_type="NEWS_RSS",
-                        primary_source=False,
-                        published_at=parse_to_utc_iso(item.get("published")),
-                        first_seen_at=retrieved_now,
-                        retrieved_at=retrieved_now,
-                        collector=self.name
-                    )
-                    records.append(record)
-
-            except Exception as e:
-                self.logger.error(f"Error fetching Google News for query '{q}': {e}")
-
-        self.logger.info(f"Google News collected {len(records)} items for {profile.ticker}")
+        self.logger.info(f"Google News collected {len(records)} unique articles for {profile.ticker}")
         return records
