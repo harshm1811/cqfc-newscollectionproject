@@ -42,6 +42,19 @@ STOPWORDS = {
 }
 
 
+# Major benchmark constituents (Nifty 50 / large-cap flagships)
+# Used as intelligent tie-breakers when an ambiguous single-word query
+# matches multiple conglomerates (e.g. 'Apolo' -> Apollo Hospitals over Apollo Tubes)
+BENCHMARK_FLAGSHIPS = {
+    "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "BHARTIARTL",
+    "SBIN", "ITC", "LT", "HINDUNILVR", "BAJFINANCE", "MARUTI",
+    "AXISBANK", "KOTAKBANK", "SUNPHARMA", "TITAN", "TATAMOTORS", "TATASTEEL",
+    "NTPC", "POWERGRID", "ONGC", "COALINDIA", "ADANIENT", "ADANIPORTS",
+    "ASIANPAINT", "M&M", "APOLLOHOSP", "NESTLEIND", "BAJAJFINSV", "JSWSTEEL",
+    "TECHM", "WIPRO", "ULTRACEMCO", "GRASIM", "HINDALCO", "DRREDDY", "CIPLA"
+}
+
+
 def damerau_levenshtein_distance(s1: str, s2: str) -> int:
     """
     Computes Damerau-Levenshtein distance (accounts for insertions, deletions,
@@ -296,6 +309,10 @@ class EquityResolver:
         # Prefer mainline Series EQ equities over illiquid BE/BZ
         if entry.get("series") == "EQ":
             score += 3.0
+
+        # Benchmark flagship tie-breaker (e.g. Apollo Hospitals > Apollo Tubes on ambiguous single-word ties)
+        if symbol in BENCHMARK_FLAGSHIPS:
+            score += 4.0
 
         return score
 

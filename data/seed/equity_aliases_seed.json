@@ -1,4 +1,44 @@
 {
+  "APOLLOHOSP": {
+    "aliases": [
+      "Apollo Hospitals",
+      "Apollo Hospital",
+      "Apollo Hospitals Enterprise Limited",
+      "Apollo Hospitals Enterprise Ltd",
+      "Apollo",
+      "Apollo Healthcare"
+    ],
+    "important_businesses": [
+      "Apollo Pharmacies",
+      "Apollo 24|7",
+      "Apollo Health and Lifestyle",
+      "Apollo Clinics"
+    ]
+  },
+  "APOLLOTYRE": {
+    "aliases": [
+      "Apollo Tyres",
+      "Apollo Tyre",
+      "Apollo Tyres Limited",
+      "Apollo Tyres Ltd"
+    ],
+    "important_businesses": [
+      "Vredestein",
+      "Apollo Tyres Europe"
+    ]
+  },
+  "APLAPOLLO": {
+    "aliases": [
+      "APL Apollo",
+      "APL Apollo Tubes",
+      "APL Apollo Tubes Limited",
+      "APL Apollo Tubes Ltd"
+    ],
+    "important_businesses": [
+      "Apollo Structural",
+      "Shankar Building"
+    ]
+  },
   "RELIANCE": {
     "aliases": [
       "Reliance Industries",
