@@ -1,19 +1,20 @@
 """
-resolver.py - Robust Typo-Tolerant Equity Resolver Engine
+resolver.py - Robust Typo-Tolerant & Prominence-Weighted Equity Resolver Engine
 
 Primary Responsibilities:
 1. Accept any user query, including typos, misspellings, letter transpositions, and informal slang:
    - 'Reliance', 'reliance', 'relaince', 'reLaince', 'Relancie' -> RELIANCE
+   - 'Apolo', 'Apollo', 'apolo hosp' -> APOLLOHOSP (over Apollo Tubes/Tyres)
    - 'SBI', 'SBI Bank', 'State Bank' -> SBIN
    - 'Tata Motors', 'tata motor', 'Tatamotrs', 'TaMo' -> TATAMOTORS
    - 'INFY', 'infosys', 'Infsys' -> INFY
    - 'L&T', 'Larsen', 'Larsen & Toubro' -> LT
    - 'HDFC', 'HDFC Bank' -> HDFCBANK
 2. Full NSE listed universe coverage: ~2,600+ equities loaded from data/seed/nse_listed_companies.csv.
-3. Multi-tier typo matching:
-   - Tier 1: Exact ticker & alias dictionary (O(1))
-   - Tier 2: Acronym / initials matching (e.g. SBI -> State Bank of India)
-   - Tier 3: Damerau-Levenshtein transposition-aware edit distance & multi-token alignment
+3. Financial Prominence Tie-Breaking:
+   When multiple companies tie on string matching (e.g. 'Apolo' matching Apollo Hospitals,
+   Apollo Tyres, and Apollo Tubes), the resolver automatically picks the more renowned,
+   higher-market-cap flagship (NIFTY 50 > NIFTY NEXT 50 > Midcaps > Microcaps).
 4. Local SQLite cache for instant re-resolution.
 """
 
@@ -41,17 +42,29 @@ STOPWORDS = {
     "company", "co", "enterprises", "industries", "holdings", "group", "the"
 }
 
-
-# Major benchmark constituents (Nifty 50 / large-cap flagships)
-# Used as intelligent tie-breakers when an ambiguous single-word query
-# matches multiple conglomerates (e.g. 'Apolo' -> Apollo Hospitals over Apollo Tubes)
-BENCHMARK_FLAGSHIPS = {
+# TIER 1: NIFTY 50 (Top 50 Indian Mega-Caps by market cap and prominence)
+NIFTY_50 = {
     "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "BHARTIARTL",
     "SBIN", "ITC", "LT", "HINDUNILVR", "BAJFINANCE", "MARUTI",
     "AXISBANK", "KOTAKBANK", "SUNPHARMA", "TITAN", "TATAMOTORS", "TATASTEEL",
     "NTPC", "POWERGRID", "ONGC", "COALINDIA", "ADANIENT", "ADANIPORTS",
     "ASIANPAINT", "M&M", "APOLLOHOSP", "NESTLEIND", "BAJAJFINSV", "JSWSTEEL",
-    "TECHM", "WIPRO", "ULTRACEMCO", "GRASIM", "HINDALCO", "DRREDDY", "CIPLA"
+    "TECHM", "WIPRO", "ULTRACEMCO", "GRASIM", "HINDALCO", "DRREDDY", "CIPLA",
+    "EICHERMOT", "DIVISLAB", "BPCL", "HEROMOTOCO", "BRITANNIA", "TATACONSUM",
+    "SHRIRAMFIN", "TRENT", "BEL", "HAL", "INDUSINDBK", "SBILIFE", "HDFCLIFE"
+}
+
+# TIER 2: NIFTY NEXT 50 (Top 51-100 renowned large-caps)
+NIFTY_NEXT_50 = {
+    "ZOMATO", "TATAPOWER", "VEDL", "PIDILITIND", "GODREJCP", "SIEMENS",
+    "DLF", "HAVELLS", "GAIL", "IOC", "AMBUJACEM", "SHREECEM", "DABUR",
+    "MARICO", "BANKBARODA", "PNB", "TVSMOTOR", "INDIGO", "CHOLAFIN",
+    "JIOFIN", "ADANIGREEN", "ADANIPOWER", "ATGL", "AWL", "BAJAJ-AUTO",
+    "BERGEPAINT", "BOSCHLTD", "CANBK", "COLPAL", "CONCOR", "CUMMINSIND",
+    "ICICIGI", "ICICIPRULI", "IRCTC", "NAUKRI", "JSWENERGY", "LTIM",
+    "MOTHERSON", "MUTHOOTFIN", "PFC", "RECLTD", "SRF", "TORNTPOWER",
+    "UNITDSPR", "VBL", "ABB", "DMART", "LODHA", "POLYCAB", "PAYTM",
+    "APOLLOTYRE", "APLAPOLLO"
 }
 
 
@@ -250,6 +263,7 @@ class EquityResolver:
         - Token-level matching
         - Curated alias matching
         - Multi-word query alignment
+        - Market Prominence Hierarchy (NIFTY 50 > NIFTY NEXT 50 > Midcaps > Microcaps)
         """
         sym_norm = normalize_text(symbol)
         max_sym_len = max(len(query_norm), len(sym_norm))
@@ -298,7 +312,8 @@ class EquityResolver:
 
         score = max(sym_sim, avg_token_sim, joined_sim, best_alias_sim)
 
-        # Multi-word full match bonus (e.g. 'tata' AND 'motors')
+        # Multi-word full match bonus (e.g. 'apollo' AND 'hospital' or 'apollo' AND 'tyres')
+        # Contextual specificity always wins!
         if all_tokens_high and len(query_tokens) > 1:
             score += 25.0
 
@@ -310,9 +325,13 @@ class EquityResolver:
         if entry.get("series") == "EQ":
             score += 3.0
 
-        # Benchmark flagship tie-breaker (e.g. Apollo Hospitals > Apollo Tubes on ambiguous single-word ties)
-        if symbol in BENCHMARK_FLAGSHIPS:
-            score += 4.0
+        # FINANCIAL PROMINENCE TIE-BREAKERS:
+        # When single words tie (e.g. 'Apolo' matching Apollo Hospitals, Apollo Tyres, Apollo Tubes)
+        # choose the more renowned benchmark large-cap:
+        if symbol in NIFTY_50:
+            score += 8.0   # Top 50 Mega-Caps (Apollo Hospitals, Reliance, TCS, SBI, etc.)
+        elif symbol in NIFTY_NEXT_50:
+            score += 4.0   # Next 50 Renowned Large-Caps (Zomato, Tata Power, Apollo Tyres, etc.)
 
         return score
 
@@ -322,7 +341,7 @@ class EquityResolver:
         1. Cache check
         2. Exact Ticker / Exact Alias (O(1))
         3. Acronym / Initials lookup
-        4. Typo-tolerant candidate ranking
+        4. Typo-tolerant candidate ranking with Prominence Weighting
         """
         if not query or not str(query).strip():
             return None
@@ -337,7 +356,19 @@ class EquityResolver:
             return cached
 
         # 2. Exact Ticker Match (case-insensitive)
+        # Note: If the query is an exact ticker symbol, return it
         if raw_upper in self.equities_by_symbol:
+            # Check if this exact symbol is a generic word like 'APOLLO' (Apollo Micro Systems)
+            # while the user typed it as a common company name. If a benchmark company has it as an alias, prioritize the alias.
+            is_benchmark_alias = False
+            for bench_ticker in NIFTY_50:
+                if bench_ticker in self.alias_map:
+                    for a in self.alias_map[bench_ticker].get("aliases", []):
+                        if a.upper() == raw_upper and bench_ticker != raw_upper:
+                            profile = self._build_profile_from_symbol(bench_ticker)
+                            self._save_to_cache(clean_q, profile)
+                            return profile
+
             profile = self._build_profile_from_symbol(raw_upper)
             self._save_to_cache(clean_q, profile)
             return profile
