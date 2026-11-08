@@ -1,0 +1,22 @@
+# Experimental starting weights. They are assumptions and require validation.
+factor_weights:
+  event_type: 0.16
+  financial_magnitude: 0.20
+  independent_source_count: 0.12
+  primary_source_confirmation: 0.12
+  company_specificity: 0.10
+  novelty: 0.10
+  quantitative_information: 0.10
+  breaking_news_status: 0.10
+
+event_type_scores:
+  earnings: 0.80
+  merger_acquisition: 1.00
+  regulatory: 0.90
+  litigation: 0.80
+  product: 0.60
+  management: 0.65
+  market: 0.55
+  other: 0.50
+
+independent_source_count_saturation: 5
