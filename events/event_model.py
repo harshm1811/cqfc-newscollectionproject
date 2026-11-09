@@ -82,24 +82,29 @@ class SentimentResult:
 
 @dataclass
 class Article:
-    """Group-3 view of a RawArticleRecord."""
+    """Group-3 view of a Clean Article Record (from Group 2)."""
     article_id: str
     ticker: str
     company_name: str
     title: str
-    description: str
-    url: str
-    source: str
-    source_type: str
-    primary_source: bool
-    published_at: Optional[datetime]
-    first_seen_at: Optional[datetime]
+    clean_text: str = ""
+    description: str = ""
+    url: str = ""
+    source: str = ""
+    source_type: str = ""
+    primary_source: bool = False
+    independent_source: bool = True
+    relevance_score: float = 1.0
+    duplicate_cluster_id: Optional[str] = None
+    published_at: Optional[datetime] = None
+    first_seen_at: Optional[datetime] = None
     sentiment: Optional[SentimentResult] = None
 
     @property
     def text(self) -> str:
-        if self.description:
-            return f"{self.title}. {self.description}"
+        body = self.clean_text or self.description
+        if body:
+            return f"{self.title}. {body}" if self.title not in body else body
         return self.title
 
     @property
@@ -109,22 +114,49 @@ class Article:
 
     @classmethod
     def from_raw(cls, raw: Any) -> "Article":
-        """Accepts a RawArticleRecord, a dict, or any object with the same attributes."""
+        """Accepts a Group 2 clean article record, dict, or object."""
         if isinstance(raw, dict):
             g = lambda k, d=None: raw.get(k, d)  # noqa: E731
         else:
             g = lambda k, d=None: getattr(raw, k, d)  # noqa: E731
-        url, ticker = g("url", "") or "", g("ticker", "") or ""
+
+        url = g("url", "") or ""
+        ticker = (g("ticker", "") or "").upper()
+        aid = g("article_id")
+        if not aid:
+            aid = make_article_id(url, ticker)
+
+        clean_txt = (g("clean_text", "") or "").strip()
+        desc = (g("description", "") or "").strip()
+
+        rel = g("relevance_score")
+        if rel is None:
+            rel = g("relevance", 1.0)
+        try:
+            rel = float(rel)
+        except (ValueError, TypeError):
+            rel = 1.0
+
+        indep = g("independent_source")
+        if indep is None:
+            indep = True
+        else:
+            indep = bool(indep)
+
         return cls(
-            article_id=make_article_id(url, ticker),
-            ticker=ticker.upper(),
+            article_id=str(aid),
+            ticker=ticker,
             company_name=g("company_name", "") or "",
             title=(g("title", "") or "").strip(),
-            description=(g("description", "") or "").strip(),
+            clean_text=clean_txt,
+            description=desc,
             url=url,
             source=g("source", "") or "",
             source_type=g("source_type", "") or "",
             primary_source=bool(g("primary_source", False)),
+            independent_source=indep,
+            relevance_score=rel,
+            duplicate_cluster_id=g("duplicate_cluster_id"),
             published_at=parse_iso(g("published_at")),
             first_seen_at=parse_iso(g("first_seen_at")),
         )
@@ -133,6 +165,7 @@ class Article:
         d = asdict(self)
         d["published_at"] = self.published_at.isoformat() if self.published_at else None
         d["first_seen_at"] = self.first_seen_at.isoformat() if self.first_seen_at else None
+        d["relevance"] = self.relevance_score
         return d
 
 
@@ -165,14 +198,48 @@ class Event:
     negative_probability: Optional[float] = None
     sentiment_score: Optional[float] = None
 
-    # Counts exposed for Person 2/3 (importance / source agreement)
+    # Importance and source metadata
+    importance_score: Optional[float] = None
     article_count: int = 0
     independent_source_count: int = 0
     primary_source_confirmed: bool = False
 
+    @property
+    def event_timestamp(self) -> Optional[datetime]:
+        return self.first_article_at or self.last_article_at
+
+    @property
+    def headline(self) -> str:
+        return self.title
+
+    @property
+    def primary_source_present(self) -> bool:
+        return self.primary_source_confirmed
+
+    def to_group4_record(self) -> Dict[str, Any]:
+        """Output format matching Group 3 -> Group 4 Event Record shared interface."""
+        return {
+            "event_id": self.event_id,
+            "ticker": self.ticker,
+            "event_type": self.event_type.value if isinstance(self.event_type, EventType) else str(self.event_type),
+            "event_timestamp": self.event_timestamp.isoformat() if self.event_timestamp else None,
+            "headline": self.headline,
+            "sentiment_score": self.sentiment_score,
+            "positive_probability": self.positive_probability,
+            "neutral_probability": self.neutral_probability,
+            "negative_probability": self.negative_probability,
+            "importance_score": self.importance_score,
+            "article_count": self.article_count,
+            "independent_source_count": self.independent_source_count,
+            "primary_source_present": self.primary_source_present,
+        }
+
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
-        d["event_type"] = self.event_type.value
+        d["event_type"] = self.event_type.value if isinstance(self.event_type, EventType) else str(self.event_type)
         d["first_article_at"] = self.first_article_at.isoformat() if self.first_article_at else None
         d["last_article_at"] = self.last_article_at.isoformat() if self.last_article_at else None
+        d["event_timestamp"] = d["first_article_at"]
+        d["headline"] = self.title
+        d["primary_source_present"] = self.primary_source_confirmed
         return d

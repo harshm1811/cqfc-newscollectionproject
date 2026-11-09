@@ -9,30 +9,47 @@ features.
 ## Repository layout
 
 ```text
-events/                         # Person 1's event model and clustering (to be added)
+events/
+  event_model.py                # Article, Event, SentimentResult, mappings dataclasses
+  event_clusterer.py            # Event clustering (TF-IDF / embeddings)
 models/
-  importance.py                 # Person 2 event importance scoring
-  source_quality.py             # Person 2 source categorization and quality
-  _records.py                   # Shared mapping/object conversion helpers
-  sentiment.py                  # Person 1 sentiment (to be added)
-  event_classifier.py           # Person 1 classification (to be added)
+  sentiment.py                  # FinBERT and Lexicon sentiment scoring
+  event_classifier.py           # 20 financial event categories classifier
+  importance.py                 # Multi-factor event importance scoring
+  source_quality.py             # Source categorization and quality scoring
+  _records.py                   # Mapping/record conversion helpers
 aggregation/
-  event_scoring.py              # Person 2 combined event scores
-  time_decay.py                 # Person 2 exponential time decay
-  adapters/input_adapter.py     # Person 3 upstream-record adapter
-  sentiment_index.py            # Person 3 event sentiment aggregation
-  feature_engine.py             # Person 3 ticker/day feature pipeline
-  rolling.py                    # Person 3 rolling sentiment and momentum
+  event_scoring.py              # Combined event scores (importance, source quality, decay)
+  time_decay.py                 # Exponential time decay
+  adapters/input_adapter.py     # Upstream record adapter
+  sentiment_index.py            # Event weighted sentiment aggregation
+  feature_engine.py             # Ticker/day quant feature pipeline
+  rolling.py                    # Rolling sentiment and momentum windows
 config/
-  importance.yaml               # Importance weights and event-type scores
+  importance.yaml               # Importance factor weights and event-type scores
   source_quality.yaml           # Source categories and quality weights
-  decay.yaml                    # Half-life and timestamp behavior
+  decay.yaml                    # Half-life and timestamp configuration
+pipeline.py                     # Unified Group 3 end-to-end pipeline runner
 tests/                          # Group 3 unit and integration tests
 ```
 
-Person 1's `events/` package and sentiment/classifier modules are not present in
-this checkout. Person 2 and Person 3 modules accept dictionaries or compatible
-record objects, so they do not import or redefine Person 1's models.
+## End-to-end Pipeline
+
+The unified runner `pipeline.run_group3_pipeline` executes the entire Group 3 pipeline:
+
+```python
+from pipeline import run_group3_pipeline
+
+# Feed clean articles from Group 2:
+result = run_group3_pipeline(
+    clean_articles,
+    to_snake_case=True,  # formats features for Group 4 schema
+)
+
+# Group 4 Deliverables:
+event_records = result.event_records   # List[dict] for Group 4 EVENT DATASET
+daily_features = result.daily_features # pd.DataFrame for Group 4 DAILY FEATURES
+```
 
 ## Install and run
 

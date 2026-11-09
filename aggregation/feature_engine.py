@@ -97,3 +97,37 @@ def build_feature_dataset(articles: pd.DataFrame, events: pd.DataFrame, mappings
         if short in daily and long in daily:
             daily = add_sentiment_momentum(daily, short_col=short, long_col=long, missing=cfg.momentum_missing)
     return daily.sort_values(["ticker", "date"]).reset_index(drop=True)
+
+
+PASCAL_TO_SNAKE_COLUMNS = {
+    "NewsCount": "news_count",
+    "RelevantArticleCount": "relevant_article_count",
+    "UniqueEventCount": "unique_event_count",
+    "PositiveEventCount": "positive_event_count",
+    "NegativeEventCount": "negative_event_count",
+    "NeutralEventCount": "neutral_event_count",
+    "MeanSentiment": "mean_sentiment",
+    "WeightedSentiment": "weighted_sentiment",
+    "Sentiment1D": "sentiment_1d",
+    "Sentiment3D": "sentiment_3d",
+    "Sentiment7D": "sentiment_7d",
+    "Sentiment30D": "sentiment_30d",
+    "SentimentMomentum": "sentiment_momentum",
+    "NewsVolume": "news_volume",
+    "NewsVolumeZScore": "news_volume_zscore",
+    "PositiveShock": "positive_shock",
+    "NegativeShock": "negative_shock",
+    "HighImportancePositiveEvent": "high_importance_positive_event",
+    "HighImportanceNegativeEvent": "high_importance_negative_event",
+    "MeanImportance": "mean_importance",
+    "MaxImportance": "max_importance",
+    "SourceAgreement": "source_agreement",
+    "SentimentDispersion": "sentiment_dispersion",
+    "PrimarySourceEventCount": "primary_source_event_count",
+}
+
+
+def standardize_feature_columns(df: pd.DataFrame, to_snake_case: bool = True) -> pd.DataFrame:
+    """Standardize daily feature columns between internal PascalCase and Group 4 snake_case."""
+    mapping = PASCAL_TO_SNAKE_COLUMNS if to_snake_case else {v: k for k, v in PASCAL_TO_SNAKE_COLUMNS.items()}
+    return df.rename(columns=mapping)

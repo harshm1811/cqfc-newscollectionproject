@@ -20,3 +20,6 @@ venv/
 
 # Temporary files
 *.tmp
+
+# Generated data outputs
+data/output/
