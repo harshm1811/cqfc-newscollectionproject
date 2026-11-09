@@ -133,7 +133,8 @@ class EventClusterer:
                     continue
                 if art.timestamp - arts[-1].timestamp > window:
                     continue
-                sim = max(cosine(vecs[art.article_id], vecs[m.article_id]) for m in arts)
+                same_cluster = bool(art.duplicate_cluster_id and any(m.duplicate_cluster_id == art.duplicate_cluster_id for m in arts))
+                sim = 1.0 if same_cluster else max(cosine(vecs[art.article_id], vecs[m.article_id]) for m in arts)
                 if sim > best_sim:
                     best_eid, best_sim = eid, sim
             if best_eid is not None and best_sim >= cfg.similarity_threshold:

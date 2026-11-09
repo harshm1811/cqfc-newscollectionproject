@@ -68,7 +68,13 @@ def adapt_enriched_outputs(articles, events, mappings, *, event_scores=None,
         if col in edf:
             edf[col] = pd.to_datetime(edf[col], utc=True, errors="coerce")
     if not adf.empty:
-        adf["relevance"] = adf.apply(lambda r: relevance_by_article.get(r.get("article_id"), r.get("relevance", config.mock_relevance)), axis=1)
+        adf["relevance"] = adf.apply(
+            lambda r: relevance_by_article.get(
+                r.get("article_id"),
+                r.get("relevance_score", r.get("relevance", config.mock_relevance))
+            ),
+            axis=1,
+        )
     for field, default in (("importance_score", config.mock_importance), ("source_quality", config.mock_source_quality), ("time_weight", config.mock_time_weight)):
         if field not in edf:
             edf[field] = default
