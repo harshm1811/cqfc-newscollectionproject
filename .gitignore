@@ -23,3 +23,8 @@ venv/
 
 # Generated data outputs
 data/output/
+
+# Hugging Face / Transformers model caches (never commit pretrained weights)
+.cache/huggingface/
+huggingface_cache/
+models--ProsusAI--finbert/

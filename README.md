@@ -62,7 +62,7 @@ data/
     mock_group2_articles.json   # Multi-day mock dataset strictly conforming to Group 2 interface
 pipeline.py                     # Central Group 3 pipeline orchestrator (run_group3_pipeline)
 run_demo.py                     # Interactive test runner and dataset exporter
-tests/                          # Pytest suite (68 unit and integration tests)
+tests/                          # Unit and integration test suite
 ```
 
 ---
@@ -71,17 +71,54 @@ tests/                          # Pytest suite (68 unit and integration tests)
 
 ### 1. Installation
 
-Python 3.10+ is recommended. Install the dependencies:
+Python 3.10+ is recommended. Install the dependencies, including PyTorch and Transformers for primary FinBERT inference:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-*(Note: PyTorch and Transformers are optional; if installed, the engine will automatically use `ProsusAI/finbert`. Otherwise, it seamlessly falls back to the local `LexiconSentimentModel` without error).*
+FinBERT is the default model (`ProsusAI/finbert`). On first use, Transformers downloads the tokenizer and model weights into the Hugging Face cache; the weights are not stored in this repository. A working network connection is needed unless the model is already cached. The lexicon fallback remains enabled by default and is selected before inference if FinBERT cannot initialize. Inference failures also trigger a warning and a complete rescore with the lexicon model when fallback is enabled. The selected model and fallback reason are available as `result.sentiment_model_name` and `result.sentiment_fallback_reason`.
+
+#### Model selection and fallback
+
+Environment configuration is read when the pipeline selects its default model:
+
+| Setting | Default | Values |
+| --- | --- | --- |
+| `SENTIMENT_MODEL` | `finbert` | `finbert` or `lexicon` |
+| `SENTIMENT_FALLBACK_ENABLED` | `true` | `true` or `false` |
+| `SENTIMENT_LOCAL_FILES_ONLY` | `false` | `true` or `false`; prevent model download |
+| `SENTIMENT_DEVICE` | automatic | `-1` for CPU, `0` for first CUDA GPU |
+
+For PowerShell, require FinBERT with no fallback and run on CPU:
+
+```powershell
+$env:SENTIMENT_MODEL = "finbert"
+$env:SENTIMENT_FALLBACK_ENABLED = "false"
+$env:SENTIMENT_DEVICE = "-1"
+python run_demo.py
+```
+
+Choose the lexicon model explicitly:
+
+```powershell
+$env:SENTIMENT_MODEL = "lexicon"
+python run_demo.py
+```
+
+The same settings can be passed through `SentimentConfig` to `run_group3_pipeline`, for example `sentiment_config=SentimentConfig(model="lexicon")`.
+
+#### FinBERT troubleshooting
+
+- Install model dependencies with `pip install transformers torch` (or rerun `pip install -r requirements.txt`).
+- If the first-run download is blocked, allow access to the Hugging Face model repository, then rerun. For an offline run, download/cache the model first and set `SENTIMENT_LOCAL_FILES_ONLY=true`.
+- Use `SENTIMENT_FALLBACK_ENABLED=false` to surface download, cache, or inference errors instead of falling back.
+- Set `SENTIMENT_DEVICE=-1` to force CPU execution. Leave it unset for automatic CUDA selection when available.
+- Do not copy model weight files into the repository; cache paths are ignored by Git.
 
 ### 2. Run Test Suite
 
-Run all 68 unit and integration tests:
+Run the unit and integration test suite:
 
 ```bash
 pytest -v
@@ -105,6 +142,53 @@ The demo displays:
 - Discovered financial events with sentiment and importance scores.
 - Daily quantitative features (rolling sentiment, momentum, volume z-scores, shock flags).
 - Exports datasets to `data/output/events.json` and `data/output/daily_features.csv` ready for Group 4.
+
+## Verifying Real FinBERT Inference on Windows
+
+The verification script performs real inference through the project's `FinBERTSentimentModel`. It bypasses model resolution and lexicon fallback, and exits nonzero if the real model cannot initialize or any probability/provenance check fails.
+
+Install the project dependencies, including `transformers` and `torch`:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+Set strict verification options in PowerShell and run the script from the repository root:
+
+```powershell
+$env:SENTIMENT_MODEL="finbert"
+$env:SENTIMENT_FALLBACK_ENABLED="false"
+$env:SENTIMENT_LOCAL_FILES_ONLY="false"
+$env:SENTIMENT_DEVICE="cpu"
+python scripts/verify_finbert.py
+```
+
+On first use, Transformers downloads the `ProsusAI/finbert` tokenizer and pretrained weights from Hugging Face into its local cache. The download may take time; later runs reuse the cache. The verification prints each sample text, predicted label, positive/negative/neutral probabilities, sentiment score, and model provenance. It prints a success message only after all real inference and probability checks pass. Provenance must be `ProsusAI/finbert`.
+
+After verification succeeds, run the full pipeline with the same strict settings:
+
+```powershell
+python run_demo.py
+```
+
+The demo prints its selected model, and every event record contains `sentiment_model_name` for provenance. It generates the unchanged Group 4 event and daily feature schemas plus the existing additive event audit fields.
+
+To run lexicon sentiment explicitly instead, select it directly:
+
+```powershell
+$env:SENTIMENT_MODEL="lexicon"
+$env:SENTIMENT_FALLBACK_ENABLED="true"
+python run_demo.py
+```
+
+This reports provenance as `lexicon`. A lexicon model activated after a FinBERT initialization or inference error reports `lexicon-fallback` and includes the failure reason. Fallback can be disabled to make either failure stop the run.
+
+Troubleshooting:
+
+- For missing packages, rerun `python -m pip install -r requirements.txt` in the same Python environment used to run the script.
+- If model download fails, check access to Hugging Face and rerun with `SENTIMENT_LOCAL_FILES_ONLY="false"`. Set it to `true` only after the model is present in the local cache.
+- For CPU-only execution, use `SENTIMENT_DEVICE="cpu"`; the pipeline maps this to Transformers' CPU device. CUDA is selected automatically if no device is specified and CUDA is available.
+- Keep downloaded weights in the Hugging Face cache. Cache directories and pretrained weight files are excluded from Git; do not commit them.
 
 ---
 
@@ -144,9 +228,9 @@ Accessed via `result.event_records` or `result.events_df`:
 | `event_timestamp` | `str` (ISO-8601) | Earliest verified article timestamp in event |
 | `headline` | `str` | Representative event headline (cluster centroid) |
 | `sentiment_score` | `float` | Event sentiment score $\in [-1, 1]$ |
-| `positive_probability` | `float` | FinBERT aggregate positive probability $\in [0, 1]$ |
-| `neutral_probability` | `float` | FinBERT aggregate neutral probability $\in [0, 1]$ |
-| `negative_probability` | `float` | FinBERT aggregate negative probability $\in [0, 1]$ |
+| `positive_probability` | `float` | Selected sentiment model's aggregate positive probability $\in [0, 1]$ |
+| `neutral_probability` | `float` | Selected sentiment model's aggregate neutral probability $\in [0, 1]$ |
+| `negative_probability` | `float` | Selected sentiment model's aggregate negative probability $\in [0, 1]$ |
 | `importance_score` | `float` | Multi-factor importance score $\in [0, 1]$ |
 | `article_count` | `int` | Number of articles describing this event |
 | `independent_source_count` | `int` | Count supported by explicit independence/origin metadata |
@@ -189,9 +273,9 @@ Accessed via `result.daily_features` (`DataFrame`):
 ## Core Methodologies
 
 ### 1. Financial Sentiment (FinBERT)
-Articles are scored using `ProsusAI/finbert` (or `LexiconSentimentModel` when running offline). Probabilities are strictly preserved:
+Articles are scored using `ProsusAI/finbert` when its tokenizer and weights initialize successfully. If configured, initialization failure selects `LexiconSentimentModel` before inference and records the model name and fallback reason in `Group3PipelineResult`. Inference failures do not trigger a model switch. Probabilities are strictly preserved:
 $$\text{sentiment\_score} = P(\text{positive}) - P(\text{negative}) \quad \in [-1, 1]$$
-At the **event level**, syndicated copies do not dominate: articles from the same independent source are averaged first, and primary sources receive a configured multiplier. Probabilities are renormalized before computing the event score.
+At the **event level**, repeated publisher coverage does not dominate: articles from the same publisher are averaged first, and primary sources receive a configured multiplier. Publisher grouping does not assert source independence. Probabilities are renormalized before computing the event score.
 
 ### 2. Event Clustering
 Combines TF-IDF / vector embeddings with temporal constraints (`time_window_hours`, `max_cluster_age_hours`) and Group 2's `duplicate_cluster_id`. Articles for different tickers are never merged. The representative headline is chosen as the article closest to the cluster centroid.

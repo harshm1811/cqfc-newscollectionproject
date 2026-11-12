@@ -55,6 +55,9 @@ def main():
     as_of = datetime(2025, 10, 23, 12, 0, 0, tzinfo=timezone.utc)
     print("\nExecuting Pipeline (Sentiment -> Clustering -> Classification -> Scoring -> Feature Engine)...")
     result = run_group3_pipeline(raw_articles, as_of=as_of, to_snake_case=True)
+    print(f"Sentiment model: {result.sentiment_model_name}")
+    if result.sentiment_fallback_reason:
+        print(f"Fallback reason: {result.sentiment_fallback_reason}")
 
     # 1. Display Clustered Financial Events
     print_banner("1. DISCOVERED FINANCIAL EVENTS (GROUP 3 -> GROUP 4 EVENT DATASET)")
