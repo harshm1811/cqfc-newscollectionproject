@@ -99,8 +99,7 @@ def deduplicate_articles(articles):
     """Return a result object with exact duplicate groups and preserved provenance.
 
     A match by either normalized URL or normalized title puts records together.
-    Missing URL/title values are ignored. Near-duplicates are not removed: this
-    avoids accidentally merging separate corporate events with similar titles.
+    Missing URL/title values are ignored.
     """
     records = [deepcopy(article) for article in articles]
     parents = list(range(len(records)))
@@ -147,7 +146,13 @@ def deduplicate_articles(articles):
         cluster_id = _cluster_id(group_records, match_type)
         for item in group_records:
             item["duplicate_cluster_id"] = cluster_id
+            if "primary_source" not in item:
+                is_prim = _source_kind(item) in {"EXCHANGE_FILING", "REGULATORY_ANNOUNCEMENT", "COMPANY_IR"}
+                item["primary_source"] = is_prim
+
         canonical = deepcopy(group_records[0])
+        canonical["independent_source"] = True
+        canonical["primary_source"] = bool(canonical.get("primary_source", False))
         canonical["deduplication"] = {
             "group_size": len(group_records),
             "is_exact_duplicate": is_duplicate_group,
@@ -156,8 +161,13 @@ def deduplicate_articles(articles):
             "near_duplicate_review": "not_assessed; no records were merged based on approximate similarity",
         }
         if is_duplicate_group:
-            # Keep every original record, including Member 2's added scoring fields.
-            canonical["duplicate_records"] = [deepcopy(item) for item in group_records[1:]]
+            for item in group_records[1:]:
+                dup_copy = deepcopy(item)
+                dup_copy["independent_source"] = False
+                dup_copy["primary_source"] = bool(dup_copy.get("primary_source", False))
+                if "duplicate_records" not in canonical:
+                    canonical["duplicate_records"] = []
+                canonical["duplicate_records"].append(dup_copy)
         output.append(canonical)
 
     return {

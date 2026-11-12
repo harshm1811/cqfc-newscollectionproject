@@ -1,0 +1,72 @@
+[
+  {
+    "company_name": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "title": "Reliance Q2 Net Profit Jumps 16% to Rs 19,324 Crore, Beats Street Estimates",
+    "description": "Reliance Industries reported consolidated net profit rising 16% year-on-year to Rs 19,324 crore, driven by robust retail EBITDA and telecom subscriber additions.",
+    "url": "https://www.bseindia.com/corporates/ann.aspx?id=101",
+    "source": "BSE",
+    "source_type": "EXCHANGE_FILING",
+    "primary_source": true,
+    "published_at": "2025-10-20T10:00:00Z",
+    "first_seen_at": "2025-10-20T10:02:00Z",
+    "retrieved_at": "2025-10-20T10:03:00Z",
+    "collector": "bse_collector"
+  },
+  {
+    "company_name": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "title": "Reliance Industries Q2 Profit Surges Driven by Retail and Jio Growth",
+    "description": "RIL posts stronger-than-expected quarterly earnings as retail and Jio segments show double-digit expansion amid operational efficiency.",
+    "url": "https://www.livemint.com/companies/news/reliance-q2-results-11729420000.html",
+    "source": "Mint",
+    "source_type": "NEWS_RSS",
+    "primary_source": false,
+    "published_at": "2025-10-20T10:30:00Z",
+    "first_seen_at": "2025-10-20T10:35:00Z",
+    "retrieved_at": "2025-10-20T10:36:00Z",
+    "collector": "google_news_rss"
+  },
+  {
+    "company_name": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "title": "RIL Q2 Earnings Exceed Analyst Forecasts on Record Margin Gains",
+    "description": "Billionaire Mukesh Ambani-led conglomerate Reliance Industries topped analyst estimates for quarterly profit, supported by oil-to-chemical recovery and retail expansion.",
+    "url": "https://www.reuters.com/business/retail-consumer/ril-q2-profit-beats-2025-10-20/",
+    "source": "Reuters",
+    "source_type": "NEWS_RSS",
+    "primary_source": false,
+    "published_at": "2025-10-20T11:15:00Z",
+    "first_seen_at": "2025-10-20T11:20:00Z",
+    "retrieved_at": "2025-10-20T11:21:00Z",
+    "collector": "google_news_rss"
+  },
+  {
+    "company_name": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "title": "Reliance Jio Unveils 5G-Enabled Cloud AI Device Platform",
+    "description": "Jio Platforms announced the commercial launch of its indigenous enterprise cloud and generative AI service platform for Indian businesses.",
+    "url": "https://economictimes.indiatimes.com/tech/technology/jio-unveils-ai-cloud/articleshow/104000.cms",
+    "source": "Economic Times",
+    "source_type": "NEWS_RSS",
+    "primary_source": false,
+    "published_at": "2025-10-21T09:00:00Z",
+    "first_seen_at": "2025-10-21T09:05:00Z",
+    "retrieved_at": "2025-10-21T09:06:00Z",
+    "collector": "google_news_rss"
+  },
+  {
+    "company_name": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "title": "SEBI Issues Show-Cause Notice to Reliance Entity Over Related Party Transactions",
+    "description": "Markets regulator SEBI has issued an inquiry notice examining compliance around related-party contract disclosures by a subsidiary of Reliance Industries.",
+    "url": "https://www.sebi.gov.in/enforcement/orders/oct-2025/reliance-notice.html",
+    "source": "SEBI",
+    "source_type": "REGULATORY_ANNOUNCEMENT",
+    "primary_source": true,
+    "published_at": "2025-10-22T14:00:00Z",
+    "first_seen_at": "2025-10-22T14:02:00Z",
+    "retrieved_at": "2025-10-22T14:03:00Z",
+    "collector": "sebi_collector"
+  }
+]
