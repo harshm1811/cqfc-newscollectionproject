@@ -86,3 +86,19 @@ def test_schema_creates_expected_lookup_indexes(tmp_path):
             )
         }
     assert expected <= actual
+
+
+def test_additive_provenance_migration_is_repeatable_and_preserves_records(tmp_path):
+    db = tmp_path / "provenance-upgrade.db"
+    initialize_database(db)
+    with connect(db) as connection:
+        connection.execute("INSERT INTO EQUITIES (ticker, company_name) VALUES ('TEST', 'Synthetic fixture')")
+        connection.execute("INSERT INTO ARTICLES (article_id, ticker, primary_source, independent_source) VALUES ('synthetic-article', 'TEST', 0, 1)")
+        connection.execute("INSERT INTO EVENTS (event_id, ticker, independent_source_count, primary_source_present) VALUES ('synthetic-event', 'TEST', 2, 1)")
+    initialize_database(db)
+    initialize_database(db)
+    with connect(db) as connection:
+        article = connection.execute("SELECT primary_source, independent_source FROM ARTICLES WHERE article_id = 'synthetic-article'").fetchone()
+        event = connection.execute("SELECT independent_source_count, primary_source_present FROM EVENTS WHERE event_id = 'synthetic-event'").fetchone()
+    assert tuple(article) == (0, 1)
+    assert tuple(event) == (2, 1)

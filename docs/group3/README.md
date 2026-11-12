@@ -6,7 +6,7 @@ Group 3 accepts Group 2 article dictionaries and produces event records, article
 
 The pipeline accepts `article_id`, `ticker`, `company_name`, `title`, `clean_text`, source metadata, timestamps, relevance, and duplicate-cluster metadata. It returns `event_records` and a pandas `daily_features` DataFrame. Event records use `event_type`, `event_timestamp`, `sentiment_score`, positive/neutral/negative probabilities, importance metadata, `article_count`, `publisher_count`, and `primary_source_present`; the Group 4 adapter maps these names to the storage schema.
 
-The default classifier and lexicon sentiment implementation run locally. FinBERT is optional and is used only when its transformer dependencies and model are available; otherwise the code falls back to lexicon sentiment. The dependency set intentionally does not download model weights.
+The default classifier runs locally and sentiment uses ProsusAI/FinBERT by default. FinBERT weights download to the local Hugging Face cache on first use. If model initialization or inference fails, a configured lexicon fallback is available and the failure reason is retained in the run record.
 
 `data/mock/mock_group2_articles.json` and the Group 3 tests contain synthetic examples only. They are not actual market data and must not be treated as application records.
 

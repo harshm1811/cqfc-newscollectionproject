@@ -33,7 +33,7 @@ def _synthetic_group1_result():
             "collector": "synthetic_fixture",
         })
     return {
-        "equity_profile": {"ticker": "TEST", "company_name": "Synthetic Test Company"},
+        "equity_profile": {"ticker": "TEST", "company_name": "Synthetic Test Company", "exchange": "TEST EXCHANGE", "country": "TEST COUNTRY"},
         "raw_articles": records,
         "total_articles": len(records),
         "collection_status": "success",
@@ -70,15 +70,21 @@ def test_synthetic_records_flow_through_groups_1_to_4(tmp_path, monkeypatch):
     assert result["daily_feature_value_count"] > 0
 
     repository = Repository(db_path)
-    assert repository.get("EQUITIES", "ticker", "TEST")
+    equity = repository.get("EQUITIES", "ticker", "TEST")
+    assert equity["exchange"] == "TEST EXCHANGE"
+    assert equity["country"] == "TEST COUNTRY"
     articles = repository.list_records("ARTICLES", filters={"ticker": "TEST"})
     assert len(articles) == 2
     assert all(article["retrieved_at"] for article in articles)
+    assert all(article["primary_source"] == 0 for article in articles)
+    assert all(article["independent_source"] == 1 for article in articles)
     sources = repository.list_records("SOURCES")
     bse_coverage = next(source for source in sources if source["name"].startswith("BSE News Desk"))
     assert bse_coverage["source_type"] == "NEWS_RSS"
     assert bse_coverage["primary_source"] == 0
-    assert repository.list_records("EVENTS", filters={"ticker": "TEST"})
+    events = repository.list_records("EVENTS", filters={"ticker": "TEST"})
+    assert events
+    assert all(event["independent_source_count"] >= 1 for event in events)
     assert repository.list_records("DAILY_FEATURES", filters={"ticker": "TEST"})
     assert repository.sentiment_records(ticker="TEST")
 

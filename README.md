@@ -22,17 +22,18 @@ $env:PYTHONPATH = "src"
 
 ## Run the application
 
-Initialize the database (safe to repeat), run collection/processing when desired, then start Streamlit:
+Initialize the database (safe to repeat), then start Streamlit. The Search page can run the full analysis for a company or ticker; it attempts extraction from up to 20 article pages by default and reports collection/extraction issues.
 
 ```powershell
 python -c "from equity_news_engine.database import initialize_database; initialize_database()"
-python run_intelligence.py Reliance
 python -m streamlit run app.py
 ```
 
+From the dashboard, set the equity and publication window in the sidebar, open **Search**, enter the company/ticker, and choose **GENERATE ANALYSIS**. The app stores the actual collected records and refreshes the selected equity. For CLI use, run `python run_intelligence.py Reliance`; add `--fetch-article-text` to attempt up to 20 page extractions.
+
 The default database is `data/equity_news.db`. Set `EQUITY_NEWS_DB` to use another path. The dashboard initializes the schema when it starts and works when the database has no financial records.
 
-The collection command accepts a company name, ticker, or supported alias. Add `--start-date` / `--end-date` to scope collection. Article-page extraction is opt-in (`--fetch-article-text`) and bounded to 20 URLs by default; feed title/description processing works without it. Collector errors and unsupported sources are retained in the collection run. To verify the pipeline without network access, run `python run_demo.py` (synthetic demo input; it does not touch the application database).
+The collection command accepts a company name, ticker, or supported alias. Add `--start-date` / `--end-date` to scope collection. Article-page extraction is bounded to 20 URLs; feed title/description processing works without it. Collector errors and unsupported sources are retained in the collection run. To verify the pipeline without network access, run `python run_demo.py` (synthetic demo input; it does not touch the application database).
 
 Run tests:
 
@@ -58,10 +59,10 @@ The test fixtures use explicitly synthetic `TEST` records in isolated temporary 
 
 ## Database tables
 
-1. `EQUITIES`: ticker and company name.
+1. `EQUITIES`: ticker, canonical company name, exchange, and country.
 2. `SOURCES`: source identity, type, and primary-source flag.
-3. `ARTICLES`: upstream article fields, timestamps, cleaning/relevance metadata, and source/equity references.
-4. `EVENTS`: event identity, type, time, headline, sentiment, importance, and counts.
+3. `ARTICLES`: upstream article fields, timestamps, cleaning/relevance metadata, primary-source status, independent-source status, and source/equity references.
+4. `EVENTS`: event identity, type, time, headline, sentiment, importance, publisher/independent-source counts, and primary-source confirmation.
 5. `ARTICLE_EVENT_MAP`: many-to-many article/event links.
 6. `SENTIMENT_RESULTS`: model/version, label, score, and probability JSON linked to an article or event.
 7. `DAILY_FEATURES`: dated named numeric features per equity.
@@ -77,11 +78,11 @@ Use `Repository(db_path=None)` from `equity_news_engine.repository`. Public oper
 
 ## Dashboard pages
 
-- **Search**: search existing ticker records and inspect matching articles/events.
-- **Overview**: actual record counts, news volume, sentiment, event types, and importance.
+- **Search**: run the full collection/analysis pipeline or inspect matching stored articles/events.
+- **Overview**: company-scoped coverage counts, independent publishers, weighted and rolling sentiment, daily trends, event polarity, and recent run/failure status.
 - **News Feed**: filtered stored articles.
-- **Events**: stored events with type and importance charts.
-- **Sentiment**: scoped sentiment records and label chart.
+- **Events**: stored events with type/importance charts and linked underlying article coverage.
+- **Sentiment**: scoped model outputs with model selection and probability details.
 - **Timeline**: dated article/event points.
 - **Sources**: registered sources and source-type chart.
 - **Export**: filtered article/event/feature tables, CSV and JSON downloads, structured JSON report.
@@ -90,7 +91,7 @@ All pages include appropriate empty states. Empty results do not cause placehold
 
 ## Reporting and export formats
 
-`build_intelligence_report` returns JSON-serializable scope, generation time, data status, counts, and actual article/event/feature/sentiment/source records. `records_for_export` supports `articles`, `events`, and `features`; `export_csv` and `export_json` handle empty and populated datasets. Export selection in the UI applies the active ticker and date filters.
+`build_intelligence_report` returns JSON-serializable company scope, coverage, weighted sentiment trends, event breakdown, major positive/negative events, observed event-type themes, risk candidates, source analysis, run failures, and the underlying stored records. `records_for_export` supports `articles`, `events`, and `features`; `export_csv` and `export_json` handle empty and populated datasets. Export selection in the UI applies the active ticker and date filters.
 
 ## Pipeline and upstream integration
 
@@ -109,7 +110,7 @@ The integration maps Group 1 publisher/provenance and timestamps into Group 2, G
 - The dashboard and collection pipeline do not perform Git or remote repository operations.
 - Authentication, multi-user access, and deployment configuration are outside this local scope.
 - The database schema is initialized with `CREATE TABLE IF NOT EXISTS`; it does not yet include versioned migrations for future schema changes.
-- FinBERT is optional and may require external model packages/weights; the included lexicon sentiment model is the offline default fallback.
+- FinBERT is the default sentiment model. The lexicon model is used only when selected explicitly or when FinBERT fails and fallback is enabled; the selected model and fallback reason are retained in run metadata.
 - Sentiment results without a linked article or event cannot be scoped by ticker/date in the dashboard.
 
 ## Group 1 collection module
@@ -122,7 +123,7 @@ Group 2’s normalization, extraction, cleaning, relevance scoring, and deduplic
 
 ## Group 3 event intelligence
 
-Group 3’s event clustering, classification, sentiment scoring, source quality, importance, time decay, and daily feature modules are available through `group3_pipeline.run_group3_pipeline(articles)`. It accepts Group 2’s processed `articles` and returns event records plus daily features. The default sentiment model uses the installed FinBERT integration when its optional model stack is available and otherwise falls back to the included lexicon model. See [Group 3 usage notes](docs/group3/README.md). Group 2 and Group 3 mock files are synthetic test/demo inputs and are not application database seeds.
+Group 3’s event clustering, classification, sentiment scoring, source quality, importance, time decay, and daily feature modules are available through `group3_pipeline.run_group3_pipeline(articles)`. It accepts Group 2’s processed `articles` and returns event records plus daily features. FinBERT is the default model; lexicon fallback is configurable. See [Group 3 usage notes](docs/group3/README.md). Group 2 and Group 3 mock files are synthetic test/demo inputs and are not application database seeds.
 
 ## Sentiment model configuration
 

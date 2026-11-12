@@ -15,13 +15,13 @@ class RepositoryError(ValueError):
 
 
 _TABLE_COLUMNS: dict[str, set[str]] = {
-    "EQUITIES": {"ticker", "company_name"},
+    "EQUITIES": {"ticker", "company_name", "exchange", "country"},
     "SOURCES": {"source_id", "name", "source_type", "primary_source"},
-    "ARTICLES": {"article_id", "ticker", "source_id", "title", "description", "url", "published_at", "first_seen_at", "retrieved_at", "clean_text", "relevance_score", "duplicate_cluster_id"},
-    "EVENTS": {"event_id", "ticker", "type", "timestamp", "headline", "sentiment_score", "sentiment_probabilities_json", "importance", "article_count", "source_count"},
+    "ARTICLES": {"article_id", "ticker", "source_id", "title", "description", "url", "published_at", "first_seen_at", "retrieved_at", "clean_text", "relevance_score", "duplicate_cluster_id", "primary_source", "independent_source", "independent_source_id"},
+    "EVENTS": {"event_id", "ticker", "type", "timestamp", "headline", "sentiment_score", "sentiment_probabilities_json", "importance", "article_count", "source_count", "independent_source_count", "primary_source_present"},
     "SENTIMENT_RESULTS": {"sentiment_id", "article_id", "event_id", "model_version", "label", "score", "probabilities_json"},
     "DAILY_FEATURES": {"feature_id", "ticker", "feature_date", "feature_name", "feature_value", "source_run_id"},
-    "COLLECTION_RUNS": {"run_id", "requested_ticker", "start_time", "end_time", "configuration_json", "collectors_json", "model_versions_json", "status", "article_count", "event_count", "failure_count", "failures_json"},
+    "COLLECTION_RUNS": {"run_id", "requested_ticker", "start_time", "end_time", "configuration_json", "collectors_json", "model_versions_json", "status", "article_count", "event_count", "failure_count", "failures_json", "created_at"},
 }
 _JSON_FIELDS = {"sentiment_probabilities_json", "probabilities_json", "configuration_json", "collectors_json", "model_versions_json", "failures_json"}
 

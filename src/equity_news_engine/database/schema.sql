@@ -1,6 +1,8 @@
 ﻿CREATE TABLE IF NOT EXISTS EQUITIES (
     ticker TEXT PRIMARY KEY,
     company_name TEXT,
+    exchange TEXT,
+    country TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
@@ -25,6 +27,9 @@ CREATE TABLE IF NOT EXISTS ARTICLES (
     clean_text TEXT,
     relevance_score REAL CHECK (relevance_score IS NULL OR relevance_score BETWEEN 0 AND 1),
     duplicate_cluster_id TEXT,
+    primary_source INTEGER CHECK (primary_source IS NULL OR primary_source IN (0, 1)),
+    independent_source INTEGER CHECK (independent_source IS NULL OR independent_source IN (0, 1)),
+    independent_source_id TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
@@ -39,6 +44,8 @@ CREATE TABLE IF NOT EXISTS EVENTS (
     importance REAL CHECK (importance IS NULL OR importance BETWEEN 0 AND 1),
     article_count INTEGER CHECK (article_count IS NULL OR article_count >= 0),
     source_count INTEGER CHECK (source_count IS NULL OR source_count >= 0),
+    independent_source_count INTEGER CHECK (independent_source_count IS NULL OR independent_source_count >= 0),
+    primary_source_present INTEGER CHECK (primary_source_present IS NULL OR primary_source_present IN (0, 1)),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 

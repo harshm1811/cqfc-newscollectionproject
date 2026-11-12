@@ -43,6 +43,13 @@ def test_all_dashboard_pages_render_with_populated_synthetic_records(tmp_path, m
         "ticker": "TEST", "feature_date": fixture_date,
         "feature_name": "synthetic_test_feature", "feature_value": 1.25,
     })
+    for name, value in (("weighted_sentiment", 0.42), ("sentiment_1d", 0.35),
+                        ("sentiment_7d", 0.25), ("sentiment_30d", 0.15),
+                        ("news_count", 1), ("unique_event_count", 1)):
+        repo.save("DAILY_FEATURES", {
+            "ticker": "TEST", "feature_date": fixture_date,
+            "feature_name": name, "feature_value": value,
+        })
 
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=20).run()
     assert not app.exception
@@ -53,3 +60,11 @@ def test_all_dashboard_pages_render_with_populated_synthetic_records(tmp_path, m
             assert any("Synthetic test article" in item.value for item in app.markdown)
         elif page == "Events":
             assert any("Synthetic test event" in item.value for item in app.markdown)
+        elif page == "Overview":
+            assert any("Company sentiment series" in item.value for item in app.markdown)
+            app.selectbox[0].set_value("TEST").run()
+            assert {metric.label for metric in app.metric} >= {
+                "Weighted sentiment", "24H sentiment", "7D sentiment", "30D sentiment",
+            }
+        elif page == "Search":
+            assert "GENERATE ANALYSIS" in {button.label for button in app.button}

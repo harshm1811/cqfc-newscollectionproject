@@ -12,9 +12,10 @@ import plotly.express as px
 import streamlit as st
 
 from .database import initialize_database
+from .integration import run_equity_intelligence
 from .reporting import (build_intelligence_report, event_importance_chart,
                         event_type_chart, export_csv, export_json, news_volume_chart,
-                        records_for_export, sentiment_chart)
+                        feature_frame, records_for_export, sentiment_chart)
 from .repository import Repository
 
 
@@ -29,6 +30,23 @@ def _show_table(records: list[dict], empty_message: str) -> None:
         st.info(empty_message)
 
 
+def _with_source_metadata(records: list[dict], repository: Repository) -> list[dict]:
+    sources = {
+        row["source_id"]: row
+        for row in repository.list_records("SOURCES", limit=10000)
+        if row.get("source_id") is not None
+    }
+    enriched = []
+    for row in records:
+        source = sources.get(row.get("source_id"), {})
+        enriched.append({
+            **row,
+            "source_name": source.get("name", "Unknown publisher"),
+            "source_type": source.get("source_type", "UNKNOWN"),
+        })
+    return enriched
+
+
 def _editorial_rows(records: list[dict], *, kind: str) -> None:
     """Render compact publication-style rows; all record text is HTML-escaped."""
     if not records:
@@ -39,7 +57,11 @@ def _editorial_rows(records: list[dict], *, kind: str) -> None:
             stamp = row.get("published_at") or row.get("first_seen_at") or "Date unavailable"
             title = row.get("title") or "Untitled report"
             meta = f"{row.get('ticker') or 'MARKET'}  ·  {stamp}"
-            detail = row.get("description") or row.get("source_name") or row.get("url") or "Stored research item"
+            source_label = row.get("source_name") or "Unknown publisher"
+            source_type = row.get("source_type") or "UNKNOWN"
+            provenance = "PRIMARY SOURCE" if row.get("primary_source") == 1 else "SECONDARY"
+            description = row.get("description") or row.get("url") or "Stored research item"
+            detail = f"{source_label} · {source_type} · {provenance} · {description}"
             st.markdown(
                 f'<article class="article-row"><div class="article-meta">{escape(str(meta))}</div>'
                 f'<div><div class="article-title">{escape(str(title))}</div>'
@@ -109,19 +131,56 @@ def render_app() -> None:
         filters = {"ticker": ticker} if ticker else {}
 
         if page == "Search":
-            _page_title("01", "Research the record.", "Search stored coverage by ticker, then inspect the matching record set.")
+            _page_title("01", "Research the record.", "Run a company analysis or search the stored record set.")
             with st.form("search_form"):
-                query = st.text_input("Ticker / equity", value=ticker or "", placeholder="Search a ticker already in the register")
-                submitted = st.form_submit_button("SEARCH THE REGISTER")
+                query = st.text_input("Company / ticker", value=ticker or "", placeholder="For example: TCS or Infosys")
+                fetch_text = st.checkbox("Attempt article-page extraction", value=True)
+                extraction_limit = st.slider("Maximum pages to fetch", min_value=1, max_value=20, value=5, disabled=not fetch_text)
+                search_col, run_col = st.columns(2)
+                searched = search_col.form_submit_button("SEARCH THE REGISTER")
+                submitted = run_col.form_submit_button("GENERATE ANALYSIS")
             if submitted:
+                if not query.strip():
+                    st.warning("Enter a company name or ticker to run an analysis.")
+                else:
+                    try:
+                        with st.spinner("Collecting public coverage and building the intelligence record…"):
+                            run_result = run_equity_intelligence(
+                                query.strip(), start_date=start, end_date=end,
+                                fetch_article_text=fetch_text, article_text_limit=extraction_limit,
+                            )
+                        st.session_state["last_analysis_result"] = run_result
+                        resolved_ticker = run_result.get("ticker")
+                        if resolved_ticker:
+                            st.session_state["ticker_filter"] = resolved_ticker
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Analysis could not be completed: {exc}")
+            if searched:
                 normalized = query.strip().upper()
                 if normalized and normalized not in tickers:
                     st.warning("That ticker is not in the equity register yet.")
                 else:
                     st.session_state["ticker_filter"] = normalized or "All equities"
                     st.rerun()
+            latest_run = st.session_state.get("last_analysis_result")
+            if latest_run:
+                status = latest_run.get("status")
+                status_view = st.success if status == "succeeded" else st.warning
+                status_view(
+                    f"Run {status}: {latest_run.get('raw_article_count', 0)} candidates, "
+                    f"{latest_run.get('processed_article_count', 0)} articles, "
+                    f"{latest_run.get('event_count', 0)} events; sentiment model "
+                    f"{latest_run.get('sentiment_model') or 'not available'}."
+                )
+                if latest_run.get("extraction_status_counts"):
+                    st.caption(f"Page extraction outcomes: {latest_run['extraction_status_counts']}")
+                failures = latest_run.get("failures") or []
+                if failures:
+                    with st.expander(f"Collection and analysis issues ({len(failures)})"):
+                        st.dataframe(pd.DataFrame(failures), use_container_width=True, hide_index=True)
             st.subheader("News record")
-            _editorial_rows(repository.list_records("ARTICLES", filters=filters, start=start, end=end), kind="article")
+            _editorial_rows(_with_source_metadata(repository.list_records("ARTICLES", filters=filters, start=start, end=end), repository), kind="article")
             st.subheader("Event register")
             _editorial_rows(repository.list_records("EVENTS", filters=filters, start=start, end=end), kind="event")
 
@@ -131,9 +190,70 @@ def render_app() -> None:
             events = repository.list_records("EVENTS", filters=filters, start=start, end=end)
             sentiments = repository.sentiment_records(ticker=ticker, start=start, end=end)
             sources = repository.list_records("SOURCES", limit=10000)
-            cols = st.columns([1, 1, 1, 1.25])
-            for col, label, value in zip(cols, ["Articles", "Events", "Sentiment reads", "Publishers"], [len(articles), len(events), len(sentiments), len(sources)]):
-                col.metric(label, f"{value:02,d}")
+            features = feature_frame(repository.list_records(
+                "DAILY_FEATURES", filters=filters, start=start, end=end, limit=10000
+            ))
+            relevant_count = sum(float(row.get("relevance_score") or 0) > 0 for row in articles)
+            publisher_count = len({row.get("source_id") for row in articles if row.get("source_id") is not None})
+            independent_publishers = len({
+                row.get("source_id") for row in articles
+                if row.get("source_id") is not None and row.get("independent_source") == 1
+            })
+            independent_value = (
+                independent_publishers
+                if any(row.get("independent_source") is not None for row in articles)
+                else "—"
+            )
+            cols = st.columns(5)
+            metric_values = [len(articles), relevant_count, len(events), publisher_count, independent_value]
+            for index, (col, label, value) in enumerate(zip(cols, ["Articles discovered", "Relevant articles", "Unique events", "Publishers", "Independent publishers"], metric_values)):
+                rendered_value = f"{value:02,d}" if isinstance(value, int) else value
+                if index == 4:
+                    col.metric(label, rendered_value, help="Unavailable for legacy records collected before independent-source provenance was persisted.")
+                else:
+                    col.metric(label, rendered_value)
+            if not features.empty:
+                st.markdown("### Company sentiment series")
+                if ticker:
+                    latest = features[features["ticker"] == ticker].iloc[-1]
+                    sentiment_cols = st.columns(4)
+                    for col, label, key in zip(
+                        sentiment_cols,
+                        ["Weighted sentiment", "24H sentiment", "7D sentiment", "30D sentiment"],
+                        ["weighted_sentiment", "sentiment_1d", "sentiment_7d", "sentiment_30d"],
+                    ):
+                        value = latest.get(key)
+                        col.metric(label, f"{float(value):+.3f}" if pd.notna(value) else "—")
+                    trend_cols = [key for key in ("weighted_sentiment", "sentiment_1d", "sentiment_7d", "sentiment_30d") if key in features]
+                    if trend_cols:
+                        st.line_chart(features.set_index("feature_date")[trend_cols], height=260)
+                else:
+                    latest_by_ticker = features.sort_values("feature_date").groupby("ticker", as_index=False).tail(1)
+                    sentiment_cols = [key for key in ("weighted_sentiment", "sentiment_1d", "sentiment_7d", "sentiment_30d") if key in features]
+                    st.dataframe(latest_by_ticker[["ticker", "feature_date", *sentiment_cols]], use_container_width=True, hide_index=True)
+                    if "weighted_sentiment" in features:
+                        st.line_chart(features.pivot(index="feature_date", columns="ticker", values="weighted_sentiment"), height=260)
+                volume_cols = [key for key in ("news_count", "unique_event_count") if key in features]
+                if volume_cols:
+                    st.markdown("### Coverage and event volume")
+                    if ticker:
+                        st.line_chart(features.set_index("feature_date")[volume_cols], height=220)
+                    else:
+                        for key in volume_cols:
+                            st.caption(key.replace("_", " ").title())
+                            st.line_chart(features.pivot(index="feature_date", columns="ticker", values=key), height=180)
+                polarity_cols = [key for key in ("positive_event_count", "negative_event_count", "neutral_event_count") if key in features]
+                if polarity_cols:
+                    st.markdown("### Event polarity")
+                    if ticker:
+                        st.bar_chart(features.set_index("feature_date")[polarity_cols], height=220)
+                    else:
+                        for key in polarity_cols:
+                            st.caption(key.replace("_", " ").title())
+                            st.bar_chart(features.pivot(index="feature_date", columns="ticker", values=key), height=180)
+                st.dataframe(features.sort_values(["ticker", "feature_date"], ascending=[True, False]), use_container_width=True, hide_index=True)
+            else:
+                st.info("Daily weighted sentiment appears after event analysis has generated dated feature records.")
             left, right = st.columns([1.3, 1])
             with left:
                 st.markdown("### Coverage pulse")
@@ -152,16 +272,55 @@ def render_app() -> None:
                 st.markdown("### Event mix")
                 chart = event_type_chart(events)
                 st.plotly_chart(chart, use_container_width=True) if chart else st.info("Event categories appear as the register grows.")
+            if ticker:
+                runs = repository.list_records(
+                    "COLLECTION_RUNS", filters={"requested_ticker": ticker},
+                    order_by="created_at", limit=10,
+                )
+            else:
+                runs = repository.list_records("COLLECTION_RUNS", order_by="created_at", limit=10)
+            st.markdown("### Recent analysis runs")
+            if runs:
+                st.dataframe(pd.DataFrame([
+                    {"Created": run.get("created_at"), "Ticker": run.get("requested_ticker"),
+                     "Status": run.get("status"), "Articles": run.get("article_count"),
+                     "Events": run.get("event_count"), "Failures": run.get("failure_count"),
+                     "Run ID": run.get("run_id")}
+                    for run in runs
+                ]), use_container_width=True, hide_index=True)
+                latest_run = runs[0]
+                if latest_run.get("failure_count", 0):
+                    try:
+                        failure_rows = json.loads(latest_run.get("failures_json") or "[]")
+                    except json.JSONDecodeError:
+                        failure_rows = [{"error": "Stored run failure details could not be decoded."}]
+                    with st.expander("Latest run issues"):
+                        st.dataframe(pd.DataFrame(failure_rows), use_container_width=True, hide_index=True)
+            else:
+                st.info("No collection runs have been recorded for this scope.")
 
         elif page == "News Feed":
             _page_title("03", "The news desk.", "Headlines and source metadata from the selected coverage window.")
-            articles = repository.list_records("ARTICLES", filters=filters, start=start, end=end)
+            articles = _with_source_metadata(repository.list_records("ARTICLES", filters=filters, start=start, end=end), repository)
             _editorial_rows(articles, kind="article")
 
         elif page == "Events":
             _page_title("04", "The event register.", "Structured market events, ordered by time and classified by recorded type.")
             events = repository.list_records("EVENTS", filters=filters, start=start, end=end)
             _editorial_rows(events, kind="event")
+            if events:
+                choices = {f"{row.get('headline') or row['event_id']} · {row['event_id']}": row for row in events}
+                selected_event = st.selectbox("Inspect event coverage", list(choices))
+                event = choices[selected_event]
+                linked = _with_source_metadata(repository.linked_articles(event["event_id"]), repository)
+                independent_count = event.get("independent_source_count")
+                primary_status = event.get("primary_source_present")
+                st.caption(
+                    f"{len(linked)} underlying article(s) · {independent_count if independent_count is not None else 'unknown'} independent source(s) · "
+                    f"primary source confirmed: {'yes' if primary_status == 1 else 'no' if primary_status == 0 else 'unknown'} · "
+                    f"event sentiment {event.get('sentiment_score')}"
+                )
+                _show_table(linked, "No linked articles are available for this event.")
             a, b = st.columns(2)
             with a:
                 chart = event_type_chart(events)
@@ -175,6 +334,11 @@ def render_app() -> None:
         elif page == "Sentiment":
             _page_title("05", "Sentiment, in context.", "Recorded model outputs scoped to the selected equity and period.")
             sentiments = repository.sentiment_records(ticker=ticker, start=start, end=end)
+            models = sorted({row.get("model_version") or "unspecified" for row in sentiments})
+            if models:
+                selected_model = st.selectbox("Sentiment model", ["All models", *models])
+                if selected_model != "All models":
+                    sentiments = [row for row in sentiments if (row.get("model_version") or "unspecified") == selected_model]
             chart = sentiment_chart(sentiments)
             if chart:
                 st.plotly_chart(chart, use_container_width=True)
@@ -227,7 +391,12 @@ def render_app() -> None:
                 st.download_button("DOWNLOAD JSON", export_json(records), f"{stem}.json", "application/json")
                 report = build_intelligence_report(repository, ticker=ticker, start=start, end=end)
                 st.download_button("DOWNLOAD INTELLIGENCE REPORT", json.dumps(report, ensure_ascii=False, indent=2), "intelligence_report.json", "application/json")
-                st.json({"scope": report["scope"], "record_counts": report["record_counts"], "data_status": report["data_status"]})
+                with st.expander("Read structured findings", expanded=True):
+                    st.json({key: report[key] for key in (
+                        "scope", "record_counts", "coverage", "sentiment", "event_breakdown",
+                        "major_positive_events", "major_negative_events", "emerging_themes",
+                        "key_risks", "source_analysis", "failures", "data_status",
+                    )})
 
     except Exception as exc:
         st.error(f"The intelligence desk could not load this view: {exc}")

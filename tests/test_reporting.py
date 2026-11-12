@@ -35,7 +35,7 @@ def test_populated_event_and_feature_report_and_exports(tmp_path):
     initialize_database(db)
     repo = Repository(db)
     # Synthetic fixture values for tests; these are not real financial records.
-    repo.save("EQUITIES", {"ticker": "TEST"})
+    repo.save("EQUITIES", {"ticker": "TEST", "company_name": "Synthetic Test Equity", "exchange": "TEST EXCHANGE", "country": "TEST COUNTRY"})
     repo.save("EVENTS", {
         "event_id": "synthetic-event-1", "ticker": "TEST", "type": "synthetic_test_event",
         "timestamp": "2026-02-03T12:00:00Z", "headline": "Synthetic test event",
@@ -47,6 +47,8 @@ def test_populated_event_and_feature_report_and_exports(tmp_path):
     })
 
     report = build_intelligence_report(repo, ticker="TEST")
+    assert report["equity"]["exchange"] == "TEST EXCHANGE"
+    assert report["equity"]["country"] == "TEST COUNTRY"
     assert report["data_status"] == "available"
     assert report["record_counts"]["events"] == 1
     assert report["record_counts"]["features"] == 1
@@ -63,3 +65,53 @@ def test_populated_event_and_feature_report_and_exports(tmp_path):
         json_output = export_json(records)
         assert csv_marker in csv_output
         assert json.loads(json_output)[0][json_key] == json_marker
+
+
+def test_structured_report_summarizes_sentiment_events_sources_and_run_failures(tmp_path):
+    db = tmp_path / "intelligence-report.db"
+    initialize_database(db)
+    repo = Repository(db)
+    # Synthetic fixture records only; they do not represent financial data.
+    repo.save("EQUITIES", {"ticker": "TEST"})
+    source = repo.save("SOURCES", {
+        "name": "Synthetic Test Publisher", "source_type": "test", "primary_source": 0,
+    })
+    repo.save("ARTICLES", {
+        "article_id": "test-article", "ticker": "TEST", "source_id": source["source_id"],
+        "title": "Synthetic report", "published_at": "2026-03-04T10:00:00Z",
+        "relevance_score": 0.9,
+    })
+    repo.save("EVENTS", {
+        "event_id": "test-positive", "ticker": "TEST", "type": "EARNINGS",
+        "timestamp": "2026-03-04T10:00:00Z", "headline": "Synthetic positive event",
+        "sentiment_score": 0.7, "importance": 0.8,
+    })
+    repo.save("EVENTS", {
+        "event_id": "test-negative", "ticker": "TEST", "type": "LITIGATION",
+        "timestamp": "2026-03-04T10:00:00Z", "headline": "Synthetic negative event",
+        "sentiment_score": -0.6, "importance": 0.9,
+    })
+    for name, value in (("weighted_sentiment", 0.25), ("sentiment_1d", 0.2),
+                        ("sentiment_7d", 0.1), ("sentiment_30d", 0.05),
+                        ("news_count", 1), ("relevant_article_count", 1)):
+        repo.save("DAILY_FEATURES", {
+            "ticker": "TEST", "feature_date": "2026-03-04",
+            "feature_name": name, "feature_value": value,
+        })
+    run_id = "synthetic-run"
+    repo.save("COLLECTION_RUNS", {
+        "run_id": run_id, "requested_ticker": "TEST", "status": "partial_failure",
+        "failures_json": [{"stage": "synthetic_test", "error": "fixture failure"}],
+    })
+
+    report = build_intelligence_report(repo, ticker="TEST")
+    assert report["coverage"] == {
+        "relevant_articles": 1, "unique_event_count": 2, "publisher_count": 1,
+    }
+    assert report["sentiment"]["overall_weighted_sentiment"] == 0.25
+    assert report["sentiment"]["latest_24h"] == 0.2
+    assert report["event_breakdown"] == {"EARNINGS": 1, "LITIGATION": 1}
+    assert report["major_positive_events"][0]["event_id"] == "test-positive"
+    assert report["key_risks"][0]["event_id"] == "test-negative"
+    assert report["source_analysis"][0]["source"] == "Synthetic Test Publisher"
+    assert report["failures"][0]["error"] == "fixture failure"

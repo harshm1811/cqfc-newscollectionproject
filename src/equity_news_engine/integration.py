@@ -150,6 +150,11 @@ def _persist_outputs(
             "clean_text": article.get("clean_text"),
             "relevance_score": article.get("relevance_score"),
             "duplicate_cluster_id": article.get("duplicate_cluster_id"),
+            "primary_source": int(article.get("primary_source") is True),
+            "independent_source": (
+                int(article["independent_source"]) if article.get("independent_source") is not None else None
+            ),
+            "independent_source_id": article.get("independent_source_id") or article.get("source_origin_id"),
         }
         _upsert(repository, "ARTICLES", "article_id", record)
         articles_saved += 1
@@ -172,6 +177,8 @@ def _persist_outputs(
             "importance": event.get("importance_score"),
             "article_count": event.get("article_count", 0),
             "source_count": event.get("publisher_count", 0),
+            "independent_source_count": event.get("independent_source_count"),
+            "primary_source_present": int(bool(event.get("primary_source_present"))),
         }
         _upsert(repository, "EVENTS", "event_id", record)
         events_saved += 1
@@ -294,6 +301,24 @@ def run_equity_intelligence(
             run_id=tracker.run_id,
         )
         state["group1"] = result
+        if tracker.run_id:
+            run_row = repository.get("COLLECTION_RUNS", "run_id", tracker.run_id) or {}
+            try:
+                configuration = json.loads(run_row.get("configuration_json") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                configuration = {}
+            configuration["generated_query_categories"] = result.get("query_categories", {})
+            configuration["collector_statuses"] = {
+                name: {key: value for key, value in outcome.items() if key != "errors"}
+                for name, outcome in result.get("collector_results", {}).items()
+            }
+            repository.update(
+                "COLLECTION_RUNS", "run_id", tracker.run_id,
+                {
+                    "collectors_json": json.dumps(list(result.get("collector_results", {}))),
+                    "configuration_json": json.dumps(configuration, ensure_ascii=False),
+                },
+            )
         profile = result.get("equity_profile")
         if profile:
             ticker = str(profile["ticker"]).upper()
@@ -302,11 +327,13 @@ def run_equity_intelligence(
                 repository.save("EQUITIES", {
                     "ticker": ticker,
                     "company_name": profile.get("company_name"),
+                    "exchange": profile.get("exchange"),
+                    "country": profile.get("country"),
                 })
-            elif current.get("company_name") != profile.get("company_name"):
+            elif any(current.get(key) != profile.get(key) for key in ("company_name", "exchange", "country")):
                 repository.update(
                     "EQUITIES", "ticker", ticker,
-                    {"company_name": profile.get("company_name")},
+                    {key: profile.get(key) for key in ("company_name", "exchange", "country")},
                 )
             repository.update(
                 "COLLECTION_RUNS", "run_id", str(tracker.run_id),
@@ -327,6 +354,7 @@ def run_equity_intelligence(
 
     def group2(payload: Mapping[str, Any]) -> dict[str, Any]:
         raw_articles = payload["group1"].get("raw_articles", [])
+        extraction_status_counts: dict[str, int] = {}
         if fetch_article_text and raw_articles:
             from extraction.article_extractor import ArticleExtractor
 
@@ -336,6 +364,8 @@ def run_equity_intelligence(
                 record = dict(item)
                 if index < article_text_limit:
                     extracted = extractor.extract_from_record(record, fetch_network=True)
+                    status_name = extracted.status.value
+                    extraction_status_counts[status_name] = extraction_status_counts.get(status_name, 0) + 1
                     if extracted.article_text:
                         record["content"] = extracted.article_text
                     if not record.get("description") and extracted.description:
@@ -344,11 +374,12 @@ def run_equity_intelligence(
                         record["title"] = extracted.title
                     if not record.get("published_at") and extracted.published_at:
                         record["published_at"] = extracted.published_at
-                    if extracted.status.value in {"FAILED", "BLOCKED"}:
+                    if extracted.status.value in {"FAILED", "BLOCKED", "PAYWALLED"}:
                         tracker.integration_failures.append({
                             "stage": "Group 2 extraction",
+                            "status": extracted.status.value,
                             "url": record.get("url"),
-                            "error": extracted.error_message or extracted.status.value,
+                            "error": extracted.error_message or f"Article extraction status: {extracted.status.value}",
                         })
                 enriched.append(record)
             raw_articles = enriched
@@ -365,6 +396,18 @@ def run_equity_intelligence(
                 min_relevance_threshold=min_relevance_threshold,
             )
         state["group2"] = processed
+        state["extraction_status_counts"] = extraction_status_counts
+        if tracker.run_id:
+            run_row = repository.get("COLLECTION_RUNS", "run_id", tracker.run_id) or {}
+            try:
+                configuration = json.loads(run_row.get("configuration_json") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                configuration = {}
+            configuration["extraction_status_counts"] = extraction_status_counts
+            repository.update(
+                "COLLECTION_RUNS", "run_id", tracker.run_id,
+                {"configuration_json": json.dumps(configuration, ensure_ascii=False)},
+            )
         return {**payload, "group2": processed}
 
     def group3(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -449,6 +492,7 @@ def run_equity_intelligence(
         "sentiment_count": counts.get("sentiments", 0),
         "sentiment_model": getattr(group3_result, "sentiment_model_name", None),
         "sentiment_fallback_reason": getattr(group3_result, "sentiment_fallback_reason", None),
+        "extraction_status_counts": state.get("extraction_status_counts", {}),
         "failed_stages": [
             {"stage": stage.stage, "status": stage.status, "error": stage.error}
             for stage in result.stages if stage.status != "succeeded"
