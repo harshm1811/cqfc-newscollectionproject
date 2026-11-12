@@ -53,7 +53,7 @@ def test_event_sentiment_not_simple_mean_syndicated_copies_dont_dominate():
     score_articles(arts, model)
     agg = aggregate_event_sentiment(arts)
     naive = sum(a.sentiment.sentiment_score for a in arts) / len(arts)
-    assert agg["independent_source_count"] == 2
+    assert agg["independent_source_count"] == 0  # publisher groups are not proof of independent origins
     assert math.isclose(agg["sentiment_score"], 0.0, abs_tol=1e-9)  # one vote each
     assert naive > 0.4                                              # naive mean would be biased
 

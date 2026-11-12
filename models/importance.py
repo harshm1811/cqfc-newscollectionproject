@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Mapping
 import math
+from enum import Enum
 
 import yaml
 
@@ -21,7 +22,7 @@ FACTOR_ALIASES = {
     "event_type": ("event_type_score",),
     "financial_magnitude": ("financial_magnitude", "magnitude_score"),
     "independent_source_count": ("independent_source_count",),
-    "primary_source_confirmation": ("primary_source_confirmed", "primary_source_confirmation"),
+    "primary_source_confirmation": ("primary_source_confirmed", "primary_source_present", "primary_source_confirmation"),
     "company_specificity": ("company_specificity", "company_specificity_score"),
     "novelty": ("novelty", "novelty_score"),
     "quantitative_information": ("quantitative_information", "quantitative_information_score"),
@@ -73,9 +74,13 @@ def score_event_importance(event, *, config=None, additional_factors: Mapping | 
             kind = get_value(event, "event_type", "type")
             scores = cfg.get("event_type_scores", {})
             type_scores = get_value(event, "type_scores", default={}) or {}
-            value = type_scores.get(str(kind).casefold()) if kind is not None and isinstance(type_scores, Mapping) else None
+            kind = kind.value if isinstance(kind, Enum) else kind
+            normalized = str(kind).strip().casefold() if kind is not None else None
+            value = type_scores.get(normalized) if normalized is not None and isinstance(type_scores, Mapping) else None
             if value is None:
-                value = scores.get(str(kind).casefold()) if kind is not None else None
+                value = scores.get(normalized) if normalized is not None else None
+            if kind is not None and value is None:
+                raise ValueError(f"No configured importance score for event type {kind!r}")
         if name == "independent_source_count" and value is not None:
             saturation = max(1, int(cfg.get("independent_source_count_saturation", 5)))
             try:
@@ -83,7 +88,12 @@ def score_event_importance(event, *, config=None, additional_factors: Mapping | 
             except (TypeError, ValueError):
                 value = None
         elif name in ("primary_source_confirmation", "breaking_news_status") and value is not None:
-            value = 1.0 if bool(value) else 0.0
+            if isinstance(value, str):
+                parsed = value.strip().casefold()
+                value = True if parsed in {"true", "1", "yes"} else False if parsed in {"false", "0", "no"} else None
+            elif not isinstance(value, bool):
+                value = None
+            value = (1.0 if value else 0.0) if value is not None else None
         try:
             score = float(value) if value is not None else None
         except (TypeError, ValueError):

@@ -37,8 +37,8 @@ def build_feature_dataset(articles: pd.DataFrame, events: pd.DataFrame, mappings
     if not a.empty:
         a["date"] = _day(a["published_at"] if "published_at" in a else a["first_seen_at"])
         a = a.dropna(subset=["ticker", "date"])
-        if "relevance" not in a: a["relevance"] = 1.0
-        a["relevance"] = pd.to_numeric(a["relevance"], errors="coerce").fillna(1)
+        if "relevance" not in a: a["relevance"] = np.nan
+        a["relevance"] = pd.to_numeric(a["relevance"], errors="coerce")
         articles_daily = a.groupby(["ticker", "date"], as_index=False).agg(NewsCount=("article_id", "nunique"), RelevantArticleCount=("relevance", lambda x: int((x > 0).sum())))
     else:
         articles_daily = pd.DataFrame(columns=["ticker", "date", "NewsCount", "RelevantArticleCount"])
@@ -56,8 +56,6 @@ def build_feature_dataset(articles: pd.DataFrame, events: pd.DataFrame, mappings
         ev["HighImportanceNegativeEvent"] = ((ev.importance_score >= cfg.high_importance_threshold) & (ev.sentiment_score < 0)).astype(int)
         if "primary_source_confirmed" not in ev: ev["primary_source_confirmed"] = False
         ev["primary_source_confirmed"] = ev.primary_source_confirmed.fillna(False).astype(bool)
-        numeric = ["importance_score"]
-        metrics = ["event_id", "PositiveEventCount", "NegativeEventCount", "NeutralEventCount", "PositiveShock", "NegativeShock", "HighImportancePositiveEvent", "HighImportanceNegativeEvent", "primary_source_confirmed"]
         event_daily = ev.groupby(["ticker", "date"], as_index=False).agg(UniqueEventCount=("event_id", "nunique") if "event_id" in ev else ("sentiment_score", "size"), PositiveEventCount=("PositiveEventCount", "sum"), NegativeEventCount=("NegativeEventCount", "sum"), NeutralEventCount=("NeutralEventCount", "sum"), PositiveShock=("PositiveShock", "sum"), NegativeShock=("NegativeShock", "sum"), HighImportancePositiveEvent=("HighImportancePositiveEvent", "sum"), HighImportanceNegativeEvent=("HighImportanceNegativeEvent", "sum"), MeanImportance=("importance_score", "mean"), MaxImportance=("importance_score", "max"), PrimarySourceEventCount=("primary_source_confirmed", "sum"))
         sent_daily = aggregate_event_sentiment(ev, method=cfg.aggregation_method)
         event_daily = event_daily.merge(sent_daily, on=["ticker", "date"], how="left")
@@ -65,6 +63,7 @@ def build_feature_dataset(articles: pd.DataFrame, events: pd.DataFrame, mappings
         # Sample standard deviation of prior calendar observations; current day excluded.
         event_daily = event_daily.sort_values(["ticker", "date"])
         event_daily["NewsVolumeZScore"] = event_daily.groupby("ticker")["NewsVolume"].transform(lambda s: (s - s.shift(1).rolling(cfg.volume_lookback, min_periods=2).mean()) / s.shift(1).rolling(cfg.volume_lookback, min_periods=2).std().replace(0, np.nan))
+        event_daily["NewsVolumeShock"] = (event_daily["NewsVolumeZScore"] >= cfg.volume_z_threshold).fillna(False).astype(int)
         # SourceAgreement = 1 - population SD of unique article source sentiment
         # per event, averaged over events; syndicated copies under one source count once.
         if not a.empty and mappings is not None and not mappings.empty:
@@ -115,6 +114,7 @@ PASCAL_TO_SNAKE_COLUMNS = {
     "SentimentMomentum": "sentiment_momentum",
     "NewsVolume": "news_volume",
     "NewsVolumeZScore": "news_volume_zscore",
+    "NewsVolumeShock": "news_volume_shock",
     "PositiveShock": "positive_shock",
     "NegativeShock": "negative_shock",
     "HighImportancePositiveEvent": "high_importance_positive_event",

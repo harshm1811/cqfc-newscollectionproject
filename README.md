@@ -149,7 +149,8 @@ Accessed via `result.event_records` or `result.events_df`:
 | `negative_probability` | `float` | FinBERT aggregate negative probability $\in [0, 1]$ |
 | `importance_score` | `float` | Multi-factor importance score $\in [0, 1]$ |
 | `article_count` | `int` | Number of articles describing this event |
-| `independent_source_count` | `int` | Count of independent reporting sources |
+| `independent_source_count` | `int` | Count supported by explicit independence/origin metadata |
+| `publisher_count` | `int` | Distinct publisher names; not treated as proof of independent origins |
 | `primary_source_present` | `bool` | `True` if confirmed by a primary source |
 
 #### 2. Daily Equity Feature Dataset (`DAILY FEATURE DATASET`)
@@ -174,11 +175,12 @@ Accessed via `result.daily_features` (`DataFrame`):
 | `sentiment_momentum` | `float` | Sentiment momentum ($\text{Sentiment}_{1\text{D}} - \text{Sentiment}_{7\text{D}}$) |
 | `news_volume` | `int` | Unique event volume |
 | `news_volume_zscore` | `float` | Rolling z-score of daily event volume |
+| `news_volume_shock` | `int` | Configured news-volume shock when the z-score reaches `volume_z_threshold` |
 | `positive_shock` | `int` | `1` if daily sentiment $\ge +0.5$, else `0` |
 | `negative_shock` | `int` | `1` if daily sentiment $\le -0.5$, else `0` |
 | `mean_importance` | `float` | Average daily event importance |
 | `max_importance` | `float` | Maximum daily event importance |
-| `source_agreement` | `float` | Agreement metric among independent sources $\in [0, 1]$ |
+| `source_agreement` | `float` | Agreement metric among publisher groups $\in [0, 1]$; publisher grouping does not prove source independence |
 | `sentiment_dispersion` | `float` | Population standard deviation of event sentiment |
 | `primary_source_event_count`| `int` | Events confirmed by primary filings/announcements |
 

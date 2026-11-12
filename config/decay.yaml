@@ -4,4 +4,4 @@ timestamp_fields:
   - first_article_at
   - published_at
   - first_seen_at
-missing_timestamp_weight: 1.0
+missing_timestamp_weight: 0.0

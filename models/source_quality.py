@@ -7,11 +7,10 @@ unless the records explicitly identify independent reporting.
 
 from dataclasses import dataclass
 from pathlib import Path
-from collections import defaultdict
-
 import yaml
 
 from ._records import as_record, get_value
+from events.event_model import parse_optional_bool
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "source_quality.yaml"
 
@@ -57,20 +56,18 @@ def score_article_source_quality(article, *, config=None):
     category = categorize_source(row, config=config)
     weights = cfg.get("category_weights", {})
     base = float(weights.get(category, weights.get("unknown", 0.5)))
-    primary = bool(row.get("primary_source", False))
-    independent = row.get("independent_source")
-    bonus_primary = float(cfg.get("primary_confirmation_bonus", 0.05)) if primary else 0.0
-    bonus_independent = float(cfg.get("independent_confirmation_bonus", 0.03)) if independent is True else 0.0
-    score = min(1.0, max(0.0, base + bonus_primary + bonus_independent))
+    # Article scores describe only publisher/category quality. Corroboration
+    # bonuses belong to the event aggregate and are applied exactly once.
+    score = min(1.0, max(0.0, base))
     return {
         "article_id": row.get("article_id"),
-        "source_category": category,
+        "source_category": [category],
         "source_quality": score,
         "source_quality_components": {
             "category_weight": base,
-            "primary_source_bonus": bonus_primary,
-            "explicit_independence_bonus": bonus_independent,
-            "independence_known": independent is not None,
+            "primary_source_bonus": 0.0,
+            "explicit_independence_bonus": 0.0,
+            "independence_known": parse_optional_bool(row.get("independent_source")) is not None,
         },
     }
 
@@ -85,7 +82,6 @@ def aggregate_event_source_quality(event, articles, *, config=None):
     event_row = as_record(event)
     scored = [score_article_source_quality(a, config=config) for a in articles]
     rows = [as_record(a) for a in articles]
-    by_id = {r.get("article_id"): r for r in rows}
     quality_by_id = {s.get("article_id"): s for s in scored}
     unique = {}
     for row in rows:
@@ -95,16 +91,18 @@ def aggregate_event_source_quality(event, articles, *, config=None):
     unique_rows = list(unique.values())
     qvalues = [quality_by_id[r.get("article_id")]["source_quality"] for r in unique_rows]
     base_quality = sum(qvalues) / len(qvalues) if qvalues else float(cfg.get("category_weights", {}).get("unknown", 0.5))
-    confirmed = bool(event_row.get("primary_source_confirmed", False)) or any(bool(r.get("primary_source")) for r in unique_rows)
-    explicit_independent = sum(r.get("independent_source") is True for r in unique_rows)
+    confirmed = parse_optional_bool(event_row.get("primary_source_confirmed")) is True or any(
+        parse_optional_bool(r.get("primary_source")) is True for r in unique_rows
+    )
+    explicit_independent = sum(parse_optional_bool(r.get("independent_source")) is True for r in unique_rows)
     primary_bonus = float(cfg.get("primary_confirmation_bonus", 0.05)) if confirmed else 0.0
     independent_bonus = float(cfg.get("independent_confirmation_bonus", 0.03)) if explicit_independent > 1 else 0.0
     final = min(1.0, base_quality + primary_bonus + independent_bonus)
-    categories = sorted({quality_by_id[r.get("article_id")]["source_category"] for r in unique_rows})
+    categories = sorted({quality_by_id[r.get("article_id")]["source_category"][0] for r in unique_rows})
     return {
         "event_id": event_row.get("event_id"),
         "source_quality": final,
-        "source_category": categories[0] if len(categories) == 1 else categories,
+        "source_category": categories,
         "source_quality_components": {
             "unique_article_count": len(unique_rows),
             "category_quality_mean": base_quality,

@@ -2,7 +2,6 @@
 prior calendar dates only (right-closed); missing dates are filled with zero
 for rolling weighted sentiment and news volume. This avoids future leakage.
 """
-import numpy as np
 import pandas as pd
 
 
@@ -19,7 +18,8 @@ def add_rolling_sentiment(daily: pd.DataFrame, windows=(1, 3, 7, 30), *, value_c
             g["ticker"] = ticker
             g[value_col] = g[value_col].fillna(0.0)
         for n in windows:
-            g[f"Sentiment{n}D"] = g[value_col].rolling(f"{int(n)}D", min_periods=1, closed="both").mean()
+            # Right-closed interval (date - (n-1) days, date], exactly n calendar dates.
+            g[f"Sentiment{n}D"] = g[value_col].rolling(f"{int(n)}D", min_periods=1, closed="right").mean()
         g = g.reset_index().rename(columns={"index": "date"})
         parts.append(g)
     return pd.concat(parts, ignore_index=True).sort_values(["ticker", "date"]).reset_index(drop=True)

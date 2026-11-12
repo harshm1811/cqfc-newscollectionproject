@@ -18,12 +18,17 @@ def event_contributions(events: pd.DataFrame) -> pd.DataFrame:
             out["sentiment_score"] = pd.to_numeric(out[probs[0]], errors="coerce") - pd.to_numeric(out[probs[1]], errors="coerce")
         else:
             out["sentiment_score"] = np.nan
-    for c, default in (("relevance", 1.0), ("importance_score", 1.0), ("source_quality", 1.0), ("time_weight", 1.0)):
+    for c in ("relevance", "importance_score", "source_quality", "time_weight"):
         if c not in out:
-            out[c] = default
-        out[c] = pd.to_numeric(out[c], errors="coerce").fillna(default).clip(lower=0)
+            out[c] = np.nan
+        out[c] = pd.to_numeric(out[c], errors="coerce").clip(lower=0)
     out["sentiment_score"] = pd.to_numeric(out["sentiment_score"], errors="coerce").clip(-1, 1)
-    out["weight"] = out[["relevance", "importance_score", "source_quality", "time_weight"]].prod(axis=1)
+    score_fields = ["relevance", "importance_score", "source_quality", "time_weight"]
+    out["score_missing_reason"] = out[score_fields].isna().apply(
+        lambda row: ",".join(row.index[row].tolist()), axis=1
+    )
+    out["weight"] = out[score_fields].prod(axis=1, min_count=len(score_fields))
+    out["weight"] = out["weight"].fillna(0.0)
     out["contribution"] = out["sentiment_score"] * out["weight"]
     return out
 

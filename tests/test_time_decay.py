@@ -10,7 +10,7 @@ def test_decay_config_is_loaded_from_yaml():
     config = TimeDecayConfig.from_yaml()
     assert config.half_life_hours == 24.0
     assert config.timestamp_fields == ("first_article_at", "published_at", "first_seen_at")
-    assert config.missing_timestamp_weight == 1.0
+    assert config.missing_timestamp_weight == 0.0
     assert TimeDecayConfig().half_life_hours == config.half_life_hours
 
 
@@ -54,3 +54,10 @@ def test_timestamp_timezone_invalid_missing_and_epoch_fallback(timestamp, expect
 def test_time_decay_config_rejects_invalid_half_life():
     with pytest.raises(ValueError):
         TimeDecayConfig(half_life_hours=float("nan"))
+
+
+def test_missing_timestamp_reports_fallback_and_uses_configured_weight():
+    result = calculate_time_weight({}, as_of="2026-01-01T10:00:00Z")
+    assert result["time_weight"] == 0.0
+    assert result["timestamp_used"] is None
+    assert result["timestamp_fallback_used"] is True

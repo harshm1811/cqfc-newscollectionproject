@@ -13,6 +13,28 @@ def test_source_category_and_independence_are_explicit():
     components = result["source_quality_components"]
     assert components["unique_article_count"] == 2
     assert components["explicit_independent_source_count"] == 0
+    assert result["source_category"] == ["general_publication"]
+
+
+def test_article_quality_excludes_event_confirmation_bonuses():
+    from models.source_quality import score_article_source_quality
+    row = {"article_id": "a", "source_type": "exchange", "primary_source": True, "independent_source": True}
+    scored = score_article_source_quality(row)
+    assert scored["source_quality"] == scored["source_quality_components"]["category_weight"]
+
+
+def test_event_corroboration_bonuses_are_applied_once():
+    result = aggregate_event_source_quality(
+        {"event_id": "e", "primary_source_confirmed": True},
+        [
+            {"article_id": "a", "source": "Outlet A", "source_type": "publication", "primary_source": True, "independent_source": True},
+            {"article_id": "b", "source": "Outlet B", "source_type": "publication", "independent_source": True},
+        ],
+    )
+    assert result["source_category"] == ["general_publication"]
+    assert abs(result["source_quality"] - 0.73) < 1e-9
+    assert result["source_quality_components"]["primary_confirmation_bonus"] == 0.05
+    assert result["source_quality_components"]["independent_confirmation_bonus"] == 0.03
     syndicated = aggregate_event_source_quality(
         {"event_id": "e2"},
         [
