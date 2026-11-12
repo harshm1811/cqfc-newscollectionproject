@@ -14,9 +14,12 @@ The model is replaceable: implement `SentimentModel.predict_proba_batch`.
 from __future__ import annotations
 
 import logging
+import math
+import os
 import re
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from events.event_model import Article, SentimentResult
@@ -32,8 +35,58 @@ class SentimentModel(ABC):
         """Return (P_pos, P_neu, P_neg) for each text."""
 
     def analyze(self, texts: Sequence[str]) -> List[SentimentResult]:
-        return [SentimentResult.from_probs(p, n, g, self.name)
-                for p, n, g in self.predict_proba_batch(list(texts))]
+        values = self.predict_proba_batch(list(texts))
+        if len(values) != len(texts):
+            raise RuntimeError(f"{self.name} returned {len(values)} probability rows for {len(texts)} texts")
+        return [SentimentResult.from_probs(p, n, g, self.name) for p, n, g in values]
+
+
+@dataclass
+class SentimentConfig:
+    """Model selection and explicit lexicon-fallback policy."""
+    model_name: str = "ProsusAI/finbert"
+    fallback_enabled: bool = True
+    local_files_only: bool = False
+    batch_size: int = 16
+    max_length: int = 512
+    device: Optional[int] = None
+    model: str = "finbert"
+
+    def __post_init__(self):
+        self.model = self.model.strip().casefold()
+        if self.model not in {"finbert", "lexicon"}:
+            raise ValueError("sentiment model must be 'finbert' or 'lexicon'")
+        if self.batch_size < 1 or self.max_length < 1:
+            raise ValueError("batch_size and max_length must be positive")
+
+    @classmethod
+    def from_env(cls):
+        """Read optional SENTIMENT_* settings without requiring dotenv."""
+        fallback = os.getenv("SENTIMENT_FALLBACK_ENABLED", "true").strip().casefold()
+        if fallback not in {"true", "false", "1", "0", "yes", "no"}:
+            raise ValueError("SENTIMENT_FALLBACK_ENABLED must be true or false")
+        local_only = os.getenv("SENTIMENT_LOCAL_FILES_ONLY", "false").strip().casefold()
+        if local_only not in {"true", "false", "1", "0", "yes", "no"}:
+            raise ValueError("SENTIMENT_LOCAL_FILES_ONLY must be true or false")
+        device_text = os.getenv("SENTIMENT_DEVICE")
+        try:
+            if device_text is None:
+                device = None
+            elif device_text.strip().casefold() == "cpu":
+                device = -1
+            elif device_text.strip().casefold() == "cuda":
+                device = 0
+            else:
+                device = int(device_text)
+        except ValueError as exc:
+            raise ValueError("SENTIMENT_DEVICE must be 'cpu', 'cuda', or an integer (use -1 for CPU)") from exc
+        return cls(
+            model=os.getenv("SENTIMENT_MODEL", "finbert"),
+            model_name=os.getenv("SENTIMENT_MODEL_NAME", "ProsusAI/finbert"),
+            fallback_enabled=fallback in {"true", "1", "yes"},
+            local_files_only=local_only in {"true", "1", "yes"},
+            device=device,
+        )
 
 
 class FinBERTSentimentModel(SentimentModel):
@@ -69,17 +122,61 @@ class FinBERTSentimentModel(SentimentModel):
         self._pipe = pipeline("text-classification", model=mdl, tokenizer=tok,
                               top_k=None, device=self.device)
 
+    def ensure_loaded(self):
+        """Initialize dependencies, tokenizer and model before inference begins."""
+        self._load()
+
     def predict_proba_batch(self, texts: Sequence[str]) -> List[Tuple[float, float, float]]:
         if not texts:
             return []
         self._load()
         clean = [(t or "").strip() or "." for t in texts]
         out = self._pipe(clean, batch_size=self.batch_size, truncation=True, max_length=self.max_length)
+        if len(out) != len(clean):
+            raise RuntimeError(f"FinBERT returned {len(out)} rows for {len(clean)} input texts")
         results = []
         for scores in out:
-            m = {d["label"].lower(): float(d["score"]) for d in scores}
-            results.append((m.get("positive", 0.0), m.get("neutral", 0.0), m.get("negative", 0.0)))
+            if isinstance(scores, dict):
+                scores = [scores]
+            m = {str(d["label"]).strip().casefold(): float(d["score"]) for d in scores}
+            required = {"positive", "neutral", "negative"}
+            if set(m) != required:
+                raise RuntimeError(f"FinBERT output labels must be {sorted(required)}; received {sorted(m)}")
+            values = (m["positive"], m["neutral"], m["negative"])
+            if any(not math.isfinite(value) or value < 0 for value in values):
+                raise RuntimeError("FinBERT returned invalid probabilities")
+            total = sum(values)
+            if total <= 0:
+                raise RuntimeError("FinBERT returned probabilities with zero total")
+            results.append(tuple(value / total for value in values))
         return results
+
+
+def resolve_sentiment_model(config: Optional[SentimentConfig] = None):
+    """Select and initialize the configured primary model before inference."""
+    config = config or SentimentConfig.from_env()
+    if config.model == "lexicon":
+        model = LexiconSentimentModel(name="lexicon")
+        logger.warning("Using lexicon model selected by SENTIMENT_MODEL=lexicon")
+        return model, None
+    try:
+        model = FinBERTSentimentModel(
+            model_name=config.model_name,
+            device=config.device,
+            batch_size=config.batch_size,
+            max_length=config.max_length,
+            local_files_only=config.local_files_only,
+        )
+        model.ensure_loaded()
+    except Exception as exc:
+        reason = f"FinBERT initialization failed ({type(exc).__name__}): {exc}"
+        if not config.fallback_enabled:
+            raise RuntimeError(reason + "; lexicon fallback is disabled") from exc
+        model = LexiconSentimentModel()
+        logger.warning("Using %s because %s", model.name, reason)
+        return model, reason
+    logger.warning("Using FinBERT model %s", model.model_name)
+    return model, None
 
 
 class LexiconSentimentModel(SentimentModel):
@@ -92,6 +189,9 @@ class LexiconSentimentModel(SentimentModel):
            "gains", "rises", "rise", "upgrade", "upgrades", "strong", "wins", "approval", "dividend", "buyback"}
     NEG = {"miss", "misses", "fall", "falls", "plunge", "plunges", "loss", "losses", "decline", "fraud",
            "probe", "downgrade", "downgrades", "weak", "lawsuit", "penalty", "default", "resigns", "slump"}
+
+    def __init__(self, *, name: str = "lexicon-fallback"):
+        self.name = name
 
     def predict_proba_batch(self, texts):
         out = []
@@ -131,7 +231,7 @@ def aggregate_event_sentiment(
     """
     Event-level sentiment from already-scored articles.
 
-    1. Group articles by independent source; average probabilities within a source.
+    1. Group articles by publisher; average probabilities within a publisher.
     2. Weight each source vote: 1.0 (x primary_source_multiplier if any article from
        that source is a primary source) (x optional source_weight_fn, so later groups
        can plug in their configurable source-quality weights).

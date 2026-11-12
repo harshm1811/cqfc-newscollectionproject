@@ -68,6 +68,14 @@ class FeatureEngineeringTests(unittest.TestCase):
         self.assertEqual(day4.Sentiment1D, 4.0)
         self.assertAlmostEqual(day4.Sentiment3D, (0.0 + 3.0 + 4.0) / 3)
 
+    def test_rolling_keeps_observed_missing_scores_as_nan(self):
+        daily = pd.DataFrame({"ticker": ["ABC", "ABC"],
+            "date": pd.to_datetime(["2026-01-01", "2026-01-03"], utc=True),
+            "WeightedSentiment": [0.2, float("nan")]})
+        out = add_rolling_sentiment(daily, windows=(1,), fill_missing_dates=True)
+        self.assertEqual(out.loc[out.date == pd.Timestamp("2026-01-02", tz="UTC"), "Sentiment1D"].iloc[0], 0.0)
+        self.assertTrue(pd.isna(out.loc[out.date == pd.Timestamp("2026-01-03", tz="UTC"), "Sentiment1D"].iloc[0]))
+
 
 if __name__ == "__main__":
     unittest.main()

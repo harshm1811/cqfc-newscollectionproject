@@ -13,6 +13,8 @@ Flow:   RawArticleRecord (Group 1/2)  ->  Article
 from __future__ import annotations
 
 import hashlib
+import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
@@ -42,14 +44,29 @@ class EventType(str, Enum):
     OTHER = "OTHER"
 
 
-def parse_iso(ts: Optional[str]) -> Optional[datetime]:
-    """Parse an ISO-8601 string into a timezone-aware UTC datetime."""
-    if not ts:
+def parse_iso(ts: Any) -> Optional[datetime]:
+    """Parse an ISO timestamp or datetime as UTC.
+
+    Naive datetimes and timestamps without an offset are assumed to be UTC,
+    matching the Group 2 ingestion contract. Missing or blank values stay None;
+    malformed nonblank values raise ValueError rather than disappearing.
+    """
+    if ts is None:
         return None
-    try:
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    if isinstance(ts, datetime):
+        dt = ts
+    elif isinstance(ts, str):
+        value = ts.strip()
+        if not value:
+            return None
+        if value.endswith(("Z", "z")):
+            value = value[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError(f"Invalid ISO-8601 timestamp: {ts!r}") from exc
+    else:
+        raise TypeError(f"Timestamp must be an ISO-8601 string, datetime, or None; got {type(ts).__name__}")
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
@@ -70,9 +87,13 @@ class SentimentResult:
 
     @staticmethod
     def from_probs(pos: float, neu: float, neg: float, model_name: str = "") -> "SentimentResult":
+        values = [float(pos), float(neu), float(neg)]
+        if any(not math.isfinite(value) or value < 0 for value in values):
+            raise ValueError("sentiment probabilities must be finite and non-negative")
+        pos, neu, neg = values
         total = pos + neu + neg
         if total <= 0:
-            pos, neu, neg, total = 0.0, 1.0, 0.0, 1.0
+            raise ValueError("at least one sentiment probability must be positive")
         pos, neu, neg = pos / total, neu / total, neg / total
         return SentimentResult(pos, neu, neg, pos - neg, model_name)
 
@@ -95,7 +116,7 @@ class Article:
     primary_source: bool = False
     independent_source: Optional[bool] = None
     independent_source_id: Optional[str] = None
-    relevance_score: float = 1.0
+    relevance_score: Optional[float] = None
     duplicate_cluster_id: Optional[str] = None
     published_at: Optional[datetime] = None
     first_seen_at: Optional[datetime] = None
@@ -116,15 +137,22 @@ class Article:
     @classmethod
     def from_raw(cls, raw: Any) -> "Article":
         """Accepts a Group 2 clean article record, dict, or object."""
-        if isinstance(raw, dict):
+        if isinstance(raw, Mapping):
             g = lambda k, d=None: raw.get(k, d)  # noqa: E731
         else:
             g = lambda k, d=None: getattr(raw, k, d)  # noqa: E731
 
         url = g("url", "") or ""
-        ticker = (g("ticker", "") or "").upper()
+        ticker = str(g("ticker", "") or "").strip().upper()
+        title = str(g("title", "") or "").strip()
+        if not ticker:
+            raise ValueError("Group 2 article is missing required field 'ticker'")
+        if not title:
+            raise ValueError("Group 2 article is missing required field 'title'")
         aid = g("article_id")
         if not aid:
+            if not url:
+                raise ValueError("Group 2 article requires 'article_id' or 'url' to identify the record")
             aid = make_article_id(url, ticker)
 
         clean_txt = (g("clean_text", "") or "").strip()
@@ -132,11 +160,14 @@ class Article:
 
         rel = g("relevance_score")
         if rel is None:
-            rel = g("relevance", 1.0)
-        try:
-            rel = float(rel)
-        except (ValueError, TypeError):
-            rel = 1.0
+            rel = g("relevance")
+        if rel is not None:
+            try:
+                rel = float(rel)
+            except (ValueError, TypeError) as exc:
+                raise ValueError(f"Invalid relevance_score: {rel!r}") from exc
+            if not math.isfinite(rel) or not 0.0 <= rel <= 1.0:
+                raise ValueError("relevance_score must be a finite number between 0 and 1")
 
         indep = parse_optional_bool(g("independent_source"))
 
@@ -144,7 +175,7 @@ class Article:
             article_id=str(aid),
             ticker=ticker,
             company_name=g("company_name", "") or "",
-            title=(g("title", "") or "").strip(),
+            title=title,
             clean_text=clean_txt,
             description=desc,
             url=url,
@@ -194,6 +225,7 @@ class Event:
     neutral_probability: Optional[float] = None
     negative_probability: Optional[float] = None
     sentiment_score: Optional[float] = None
+    sentiment_model_name: Optional[str] = None
 
     # Importance and source metadata
     importance_score: Optional[float] = None
@@ -233,6 +265,7 @@ class Event:
             "event_timestamp": self.event_timestamp.isoformat() if self.event_timestamp else None,
             "headline": self.headline,
             "sentiment_score": self.sentiment_score,
+            "sentiment_model_name": self.sentiment_model_name,
             "positive_probability": self.positive_probability,
             "neutral_probability": self.neutral_probability,
             "negative_probability": self.negative_probability,

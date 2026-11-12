@@ -80,16 +80,17 @@ def test_event_metadata_sources_and_primary():
 
 def test_independence_metadata_is_tristate_and_explicit():
     from events.event_model import Article
-    assert Article.from_raw({"title": "x"}).independent_source is None
-    assert Article.from_raw({"title": "x", "independent_source": True}).independent_source is True
-    assert Article.from_raw({"title": "x", "independent_source": False}).independent_source is False
-    assert Article.from_raw({"title": "x", "independent_source": "true"}).independent_source is True
-    assert Article.from_raw({"title": "x", "independent_source": "false"}).independent_source is False
-    assert Article.from_raw({"title": "x", "independent_source": "unknown"}).independent_source is None
+    base = {"article_id": "a", "ticker": "ABC", "title": "x"}
+    assert Article.from_raw(base).independent_source is None
+    assert Article.from_raw({**base, "independent_source": True}).independent_source is True
+    assert Article.from_raw({**base, "independent_source": False}).independent_source is False
+    assert Article.from_raw({**base, "independent_source": "true"}).independent_source is True
+    assert Article.from_raw({**base, "independent_source": "false"}).independent_source is False
+    assert Article.from_raw({**base, "independent_source": "unknown"}).independent_source is None
 
 
 def test_missing_article_timestamp_is_not_replaced_with_epoch():
-    article = Article.from_raw({"ticker": "ABC", "title": "Company announces earnings"})
+    article = Article.from_raw({"article_id": "a", "ticker": "ABC", "title": "Company announces earnings"})
     (event,), _ = EventClusterer().cluster([article])
     assert article.timestamp is None
     assert event.event_timestamp is None

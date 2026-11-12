@@ -47,6 +47,10 @@ def build_feature_dataset(articles: pd.DataFrame, events: pd.DataFrame, mappings
         time_col = "first_article_at" if "first_article_at" in ev else "published_at"
         ev["date"] = _day(ev[time_col])
         ev = ev.dropna(subset=["ticker", "date"]).drop_duplicates("event_id" if "event_id" in ev else ["ticker", "date", "title"])
+        if ev.empty and articles_daily.empty:
+            # Records without usable dates remain in the event output, but no
+            # daily feature date can be assigned without inventing a timestamp.
+            return pd.DataFrame()
         ev["PositiveEventCount"] = (ev.sentiment_score > 0).astype(int)
         ev["NegativeEventCount"] = (ev.sentiment_score < 0).astype(int)
         ev["NeutralEventCount"] = (ev.sentiment_score == 0).astype(int)

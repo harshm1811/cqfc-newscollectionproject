@@ -68,6 +68,8 @@ def test_full_group3_pipeline_with_group2_mock_data():
     )
 
     assert isinstance(result, Group3PipelineResult)
+    assert result.sentiment_model_name == "lexicon-fallback"
+    assert result.sentiment_fallback_reason is None  # explicitly injected model
     assert len(result.articles) == 3
     assert len(result.events) == 2  # Q2 earnings event + SEBI regulatory event
     assert len(result.event_records) == 2
@@ -90,6 +92,7 @@ def test_full_group3_pipeline_with_group2_mock_data():
     }
     for rec in result.event_records:
         assert required_event_fields.issubset(rec.keys())
+        assert rec["sentiment_model_name"] == "lexicon-fallback"
         assert rec["ticker"] == "RELIANCE"
         assert -1.0 <= rec["sentiment_score"] <= 1.0
         assert 0.0 <= rec["importance_score"] <= 1.0
@@ -201,3 +204,16 @@ def test_article_from_raw_interface_compliance():
     d = art.to_dict()
     assert d["article_id"] == "PRESERVED-ID-999"
     assert d["relevance"] == 0.99
+
+
+def test_article_schema_rejects_missing_required_fields_and_keeps_optional_missing():
+    from events.event_model import Article
+    with pytest.raises(ValueError, match="ticker"):
+        Article.from_raw({"article_id": "a", "title": "Headline"})
+    with pytest.raises(ValueError, match="requires 'article_id' or 'url'"):
+        Article.from_raw({"ticker": "ABC", "title": "Headline"})
+    article = Article.from_raw({"article_id": "a", "ticker": "abc", "title": "Headline"})
+    assert article.ticker == "ABC"
+    assert article.company_name == ""
+    assert article.relevance_score is None
+    assert article.published_at is None and article.first_seen_at is None
