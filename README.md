@@ -1,231 +1,111 @@
-# Equity News Intelligence Engine — Group 1
-> **Subsystem**: Equity Resolution & Multi-Source News/Announcement Collection  
-> **Pipeline Role**: `USER QUERY → CANONICAL EQUITY → RAW NEWS & FILINGS STREAM`
+# Equity News Intelligence & Sentiment Engine — Group 4
 
----
+Repository: cqfc-newscollectionproject
 
-## Overview
+Local implementation of Group 4's database, repository, run tracking, dashboard, reporting, export, and orchestration infrastructure. It contains no seeded financial records. Data displayed and exported comes from records supplied to the repository by an actual integration or by a user.
 
-Group 1 is the foundational ingestion layer of the Equity News Intelligence & Sentiment Engine. It takes free-form, noisy user inputs (e.g., `"relaince"`, `"SBI"`, `"Tata Motors"`), resolves them into canonical publicly listed equities across all **2,620+ active NSE companies**, generates targeted multi-category queries, and concurrently collects hundreds of candidate articles, exchange announcements, and regulatory releases from free public sources.
+## Requirements and setup
 
----
+- Python 3.13
+- SQLite via Python's built-in `sqlite3`
+- Streamlit, Pandas, Plotly, and Pytest (installed from `requirements.txt`)
 
-## Quickstart: Running on Any Device
+PowerShell:
 
-### Prerequisites
-* Python 3.9+ (Python 3.10–3.12 recommended)
-* Git
-
----
-
-### Method A: With Virtual Environment (Recommended)
-
-#### 1. Clone the repository
-```bash
-git clone https://github.com/MeetBatheja/News_Collect.git
-cd News_Collect
-```
-
-#### 2. Create and activate a virtual environment
-* **macOS / Linux**:
-  ```bash
-  python3 -m venv .venv
-  source .venv/bin/activate
-  ```
-* **Windows (Command Prompt / PowerShell)**:
-  ```cmd
-  python -m venv .venv
-  .venv\Scripts\activate
-  ```
-
-#### 3. Install dependencies
-```bash
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+$env:PYTHONPATH = "src"
 ```
 
-#### 4. Run tests & smoke test
-```bash
-# Verify system (7/7 tests)
-python run_tests.py
+## Run the application
 
-# Test any company query
-python test_run.py "Zomato"
+Initialize the database (safe to repeat), then start Streamlit:
+
+```powershell
+python -c "from equity_news_engine.database import initialize_database; initialize_database()"
+python -m streamlit run app.py
 ```
 
----
+The default database is `data/equity_news.db`. Set `EQUITY_NEWS_DB` to use another path. The dashboard initializes the schema when it starts and works when the database has no financial records.
 
-### Method B: Without Virtual Environment (Direct System Python)
+Run tests:
 
-If you prefer to run directly without creating a virtual environment:
-
-#### 1. Clone the repository
-```bash
-git clone https://github.com/MeetBatheja/News_Collect.git
-cd News_Collect
+```powershell
+python -m pytest -q
 ```
 
-#### 2. Install dependencies directly
-* **macOS / Linux**:
-  ```bash
-  pip3 install -r requirements.txt
-  ```
-  *(If your system uses managed environments, run: `pip3 install --user -r requirements.txt`)*
+## Architecture
 
-* **Windows**:
-  ```cmd
-  pip install -r requirements.txt
-  ```
+- `app.py`: Streamlit entry point.
+- `src/equity_news_engine/database/`: SQLite connection context, schema, initialization.
+- `repository.py`: allowlisted CRUD, filters, relationships, and scoped sentiment retrieval. Dashboard and reporting code use this API instead of issuing SQL.
+- `runs.py`: unique run IDs and lifecycle, configuration, collector/model metadata, counts, and failure tracking.
+- `dashboard.py`: all eight pages, UI filters, charts, tables, and empty/error states.
+- `reporting.py`: structured report, actual-record CSV/JSON export, and chart builders.
+- `pipeline.py`: injectable adapters and sequential orchestration with audited stage failures.
+- `tests/`: database, repository, tracking, pipeline, reporting, exports, and dashboard tests. Tests use temporary databases.
 
-#### 3. Run tests & collection
-* **macOS / Linux**:
-  ```bash
-  python3 run_tests.py
-  python3 test_run.py "Tata Motors"
-  ```
-* **Windows**:
-  ```cmd
-  python run_tests.py
-  python test_run.py "Tata Motors"
-  ```
+The test fixtures use explicitly synthetic `TEST` records in isolated temporary databases. They are only for verification and are not real financial data or seeded application data. The suite checks individual schema constraints and indexes, empty and populated dashboard states, report content, and CSV/JSON serialization of stored records.
 
----
+## Database tables
 
-## Integration Guide for Downstream Groups
+1. `EQUITIES`: ticker and company name.
+2. `SOURCES`: source identity, type, and primary-source flag.
+3. `ARTICLES`: upstream article fields, timestamps, cleaning/relevance metadata, and source/equity references.
+4. `EVENTS`: event identity, type, time, headline, sentiment, importance, and counts.
+5. `ARTICLE_EVENT_MAP`: many-to-many article/event links.
+6. `SENTIMENT_RESULTS`: model/version, label, score, and probability JSON linked to an article or event.
+7. `DAILY_FEATURES`: dated named numeric features per equity.
+8. `COLLECTION_RUNS`: requested ticker/window, configuration, collectors, model versions, counts, status, and failure details.
 
-### How Group 4 (Integration / Dashboard) Calls Group 1
-Import the master pipeline entrypoint from `pipeline.py`:
+Foreign keys are enabled on each connection. Score ranges, nonnegative counts, allowed run statuses, JSON fields, and link requirements have SQLite constraints. Indexes cover ticker/time lookups and common relationships. Timestamps are stored as ISO text; integrations should provide consistently formatted ISO-8601 values.
 
-```python
-from pipeline import collect_equity_news
+## Repository and run tracking
 
-# One-line invocation
-result = collect_equity_news(
-    query="Reliance",           # Any ticker, alias, or typo
-    start_date="2026-10-01",    # Optional ISO date string
-    end_date="2026-10-31"       # Optional ISO date string
-)
+Use `Repository(db_path=None)` from `equity_news_engine.repository`. Public operations include `save`, `get`, `list_records`, `update`, `link_article_event`, `linked_articles`, `linked_events`, and `sentiment_records`. Table/column identifiers are allowlisted; values use parameterized queries. Invalid fields/JSON and SQLite failures raise `RepositoryError`.
 
-print(result["status"])           # "SUCCESS" | "NO_ARTICLES" | "FAILED"
-print(result["equity_profile"])   # Canonical profile dict
-print(result["total_articles"])   # e.g., 384
-print(result["collector_stats"])  # {"google_news_rss": 220, "nse_collector": 100, ...}
-```
+`RunTracker.start(...)` creates a UUID run in `running` state. `finish(...)` records counts, end time and failures; a run with failures defaults to `partial_failure`. `fail(...)` preserves a stage and error detail while marking the run failed. Status values are `pending`, `running`, `succeeded`, `partial_failure`, and `failed`.
 
----
+## Dashboard pages
 
-### How Group 2 (Extraction & Cleaning) Consumes Group 1 Data
+- **Search**: search existing ticker records and inspect matching articles/events.
+- **Overview**: actual record counts, news volume, sentiment, event types, and importance.
+- **News Feed**: filtered stored articles.
+- **Events**: stored events with type and importance charts.
+- **Sentiment**: scoped sentiment records and label chart.
+- **Timeline**: dated article/event points.
+- **Sources**: registered sources and source-type chart.
+- **Export**: filtered article/event/feature tables, CSV and JSON downloads, structured JSON report.
 
-Group 1 provides two ways to consume data:
+All pages include appropriate empty states. Empty results do not cause placeholder financial content to appear.
 
-#### 1. Live Python Stream:
-`result["raw_articles"]` contains a list of standardized dictionaries matching the agreed `RawArticleRecord` contract:
+## Reporting and export formats
 
-```json
-{
-  "company_name": "Reliance Industries Limited",
-  "ticker": "RELIANCE",
-  "title": "Reliance Q2 profit beats analyst estimates on strong retail growth",
-  "description": "Billionaire Mukesh Ambani's Reliance Industries Ltd reported...",
-  "url": "https://www.livemint.com/market/reliance-q2-earnings-2026",
-  "source": "Livemint",
-  "source_type": "NEWS_RSS",
-  "primary_source": false,
-  "published_at": "2026-10-27T14:15:00Z",
-  "first_seen_at": "2026-10-31T07:10:00Z",
-  "retrieved_at": "2026-10-31T07:10:00Z",
-  "collector": "GoogleNewsRSSCollector"
-}
-```
+`build_intelligence_report` returns JSON-serializable scope, generation time, data status, counts, and actual article/event/feature/sentiment/source records. `records_for_export` supports `articles`, `events`, and `features`; `export_csv` and `export_json` handle empty and populated datasets. Export selection in the UI applies the active ticker and date filters.
 
-#### 2. Offline Mock Sample for Development:
-Group 2 can develop and unit-test extractors immediately without live network requests by loading:
-```text
-data/raw/samples/mock_raw_articles.json
-```
+## Pipeline and upstream integration
 
----
+`PipelineOrchestrator` executes the required Group 1 → Group 2 → Group 3 → Group 4 order. `Group1Adapter`, `Group2Adapter`, `Group3Adapter`, and `Group4Adapter` accept real callbacks. Missing callbacks raise `AdapterUnavailable`, stop downstream execution, and are recorded in the run. Earlier successful stages produce `partial_failure`; failure at the first stage is `failed`. Payloads are passed through without invented field conversions. The Group 4 persistence callback must map confirmed upstream records to repository saves.
 
-## 📋 Data Contract & Standards
+The provisional minimum interface descriptions supplied for the project are:
 
-### Allowed `source_type` Vocabulary
-* `EXCHANGE_FILING`: Official announcements submitted to NSE or BSE.
-* `REGULATORY`: Enforcement orders, warnings, or circulars from SEBI.
-* `COMPANY_IR`: Press releases from official investor relations channels.
-* `NEWS_RSS`: Articles discovered via Google News and media RSS feeds.
-* `AGGREGATOR`: Multi-source aggregations (e.g., Business Standard, Moneycontrol).
+- Group 1 → Group 2: ticker, company name, title, description, URL, source, source type, primary-source flag, published/first-seen/retrieved timestamps.
+- Group 2 → Group 3: article ID, ticker, title, clean text, source/source type, published/first-seen timestamps, relevance score, duplicate cluster ID.
+- Group 3 → Group 4: event ID, ticker, type, timestamp, headline, sentiment probabilities/score, importance, article/source counts.
 
-### Strict Timestamp Integrity
-* `published_at`: Standardized UTC ISO-8601 (`YYYY-MM-DDTHH:MM:SSZ`). If unavailable or unparseable, it is strictly `null` (`None`). **The system never invents publication dates.**
-* `first_seen_at` & `retrieved_at`: Point-in-time capture timestamps recording discovery time.
+These are integration notes, not finalized contracts. Group 1/2 source identity and Group 3 probability encoding/field names still need agreement. No real upstream code is currently connected. Before connecting it, confirm identifiers, nullability, timestamp formats, score scales, probability representation, and failure semantics with the relevant group. Group 4's schema accepts the minimum listed event concepts but does not infer or calculate upstream results.
 
----
+## Known limitations
 
-## Repository Structure
+- The dashboard and collection pipeline do not perform Git or remote repository operations.
+- Authentication, multi-user access, and deployment configuration are outside this local scope.
+- The database schema is initialized with `CREATE TABLE IF NOT EXISTS`; it does not yet include versioned migrations for future schema changes.
+- Pipeline callbacks and final Group 4 record mapping await confirmed Group 1–3 implementations and finalized contracts.
+- Sentiment results without a linked article or event cannot be scoped by ticker/date in the dashboard.
 
-```text
-News_Collect/
-├── config/
-│   ├── default_config.yaml         # Timeouts, rate limits, and collector toggles
-│   └── query_templates.json        # 11+ financial category search templates
-├── data/
-│   ├── seed/
-│   │   ├── nse_listed_companies.csv   # Master list of all 2,620 active NSE equities
-│   │   └── equity_aliases_seed.json   # Known abbreviations (RIL, SBI, TaMo, L&T)
-│   ├── cache/                      # Local SQLite cache for rapid re-resolution
-│   └── raw/                        # Immutable raw JSON/XML archive ({TICKER}/)
-│       └── samples/
-│           └── mock_raw_articles.json # Contract mock dataset for Group 2
-├── equity/
-│   ├── profile.py                  # Pydantic EquityProfile data model
-│   ├── resolver.py                 # Typo-tolerant Damerau-Levenshtein fuzzy resolver
-│   └── query_generator.py          # Category query generator
-├── collectors/
-│   ├── base_collector.py           # BaseCollector ABC + RawArticleRecord schema
-│   ├── google_news_rss.py          # High-volume Google News search collector
-│   ├── generic_rss_collector.py    # Financial RSS & Yahoo Finance ticker feed
-│   ├── nse_collector.py            # Primary NSE corporate announcements
-│   ├── bse_collector.py            # Primary BSE corporate announcements
-│   └── sebi_collector.py           # Primary SEBI regulatory orders & releases
-├── utils/
-│   ├── http_client.py              # Requests session with retries & browser headers
-│   ├── timestamp_parser.py         # UTC ISO-8601 timestamp normalizer
-│   ├── url_resolver.py             # Redirect resolver for Google News links
-│   └── logger.py                   # Formatted logger with run_id support
-├── pipeline.py                     # Master orchestrator entrypoint
-├── test_run.py                     # Interactive CLI tool to test any equity query
-├── run_tests.py                    # Complete verification test suite
-└── requirements.txt                # Production dependencies
-```
+## Group 1 collection module
 
----
-
-## Testing & Verification
-
-Run the test suite:
-```bash
-python run_tests.py
-```
-
-Expected output:
-```text
-==================================================
-        EQUITY NEWS INTELLIGENCE - GROUP 1        
-              SYSTEM VERIFICATION                 
-==================================================
-✓ test_equity_profile passed
-✓ test_full_universe_loaded passed (2620 NSE equities active)
-✓ test_typo_and_transposition_tolerance passed ('relaince', 'Relancie', 'Tatamotrs', 'Infsys')
-✓ test_acronym_and_informal_resolution passed ('SBI', 'SBI Bank', 'L&T', 'HDFC', 'Wipro', 'Zomato')
-✓ test_timestamp_parser passed (strictly normalizes to UTC ISO-8601, zero date invention)
-✓ test_query_generator passed (37 unique queries generated across categories)
-✓ test_raw_article_record_schema passed (conforms to Group 1 -> Group 2 contract)
-
---------------------------------------------------
-Result: 7/7 tests passed.
-ALL TESTS PASSED WITH 100% SUCCESS!
-```
-
----
-
-## License
-This repository is part of the Equity News Intelligence & Sentiment Engine academic/quant research initiative.
+The Group 1 equity resolver, query generator, collectors, and collection pipeline are retained at the repository root. They return raw candidate records with publisher/source identity, primary-source provenance, publication and capture timestamps, collector metadata, and structured collector status/errors. Google News fallback coverage is secondary reporting; BSE collection is explicitly unsupported when a verified six-digit scrip-code mapping is unavailable. Company investor-relations feeds require explicit per-ticker configuration. See [the Group 1 integration and usage notes](docs/group1/README.md). Group 1's standalone verification is `python run_tests.py`; the repository-wide suite is `python -m pytest -q`.

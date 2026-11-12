@@ -26,7 +26,7 @@ wheels/
 .installed.cfg
 *.egg
 
-# Testing & Coverage
+# Testing & coverage
 .pytest_cache/
 .coverage
 htmlcov/
@@ -36,7 +36,10 @@ htmlcov/
 .vscode/
 .idea/
 
-# Local cache & data
+# Local database/cache and generated raw data
+*.db
+*.sqlite
+*.sqlite3
 data/cache/*.sqlite
 data/raw/*
 !data/raw/samples/
