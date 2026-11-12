@@ -66,6 +66,48 @@ class TestCleaningAndNormalization(unittest.TestCase):
         self.assertEqual(res["clean_text"], "Reliance Q2 Results. Consolidated net profit beats estimates.")
         self.assertEqual(res["text_scope"], "title_and_description")
 
+    def test_secondary_publisher_name_does_not_promote_provenance(self):
+        for publisher in ("BSE News Desk", "SEBI Watch", "NSE Coverage"):
+            with self.subTest(publisher=publisher):
+                record = normalize_article({
+                    "ticker": "TEST",
+                    "company_name": "Synthetic Test Company",
+                    "title": "Synthetic fixture headline",
+                    "description": "Synthetic test-only description",
+                    "url": "https://publisher.example.test/story",
+                    "source": publisher,
+                    "source_type": "NEWS_RSS",
+                    "primary_source": False,
+                })
+                self.assertFalse(record["primary_source"])
+                self.assertEqual(record["source_type"], "NEWS_RSS")
+
+    def test_explicit_primary_company_ir_provenance_is_preserved(self):
+        record = normalize_article({
+            "ticker": "TEST",
+            "company_name": "Synthetic Test Company",
+            "title": "Synthetic test release",
+            "description": "Synthetic test-only description",
+            "url": "https://ir.example.test/release",
+            "source": "Synthetic Test Company Investor Relations",
+            "source_type": "COMPANY_IR",
+            "primary_source": True,
+        })
+        self.assertTrue(record["primary_source"])
+        self.assertEqual(record["source_type"], "COMPANY_IR")
+
+    def test_string_false_is_not_truthy_primary_provenance(self):
+        record = normalize_article({
+            "ticker": "TEST",
+            "company_name": "Synthetic Test Company",
+            "title": "Synthetic fixture headline",
+            "url": "https://bse.example.test/coverage",
+            "source": "BSE coverage",
+            "source_type": "NEWS_RSS",
+            "primary_source": "false",
+        })
+        self.assertFalse(record["primary_source"])
+
 
 if __name__ == "__main__":
     unittest.main()
