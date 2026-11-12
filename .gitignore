@@ -45,3 +45,4 @@ data/raw/*
 !data/raw/samples/
 !data/raw/samples/*.json
 !data/raw/.gitkeep
+final_articles.json

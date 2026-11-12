@@ -109,3 +109,7 @@ These are integration notes, not finalized contracts. Group 1/2 source identity 
 ## Group 1 collection module
 
 The Group 1 equity resolver, query generator, collectors, and collection pipeline are retained at the repository root. They return raw candidate records with publisher/source identity, primary-source provenance, publication and capture timestamps, collector metadata, and structured collector status/errors. Google News fallback coverage is secondary reporting; BSE collection is explicitly unsupported when a verified six-digit scrip-code mapping is unavailable. Company investor-relations feeds require explicit per-ticker configuration. See [the Group 1 integration and usage notes](docs/group1/README.md). Group 1's standalone verification is `python run_tests.py`; the repository-wide suite is `python -m pytest -q`.
+
+## Group 2 article processing
+
+Group 2’s normalization, extraction, cleaning, relevance scoring, and deduplication modules are retained alongside Group 1. Its callable pipeline is `group2_pipeline.run_pipeline(input_path, output_path)`; it accepts Group 1 candidate records in JSON and emits the article contract consumed by Group 3. Keep `final_articles.json` and other demonstration outputs out of the live database; `mock_raw_articles.json` is an explicitly synthetic fixture. See [Group 2 usage notes](docs/group2/README.md).
