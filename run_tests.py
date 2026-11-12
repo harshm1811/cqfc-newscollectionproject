@@ -102,7 +102,7 @@ def test_timestamp_parser():
 
     # 3. Indian exchange timestamp format
     iso3 = parse_to_utc_iso("28-Oct-2026 15:45:00")
-    assert iso3 == "2026-10-28T15:45:00Z"
+    assert iso3 == "2026-10-28T10:15:00Z"
 
     # 4. CRITICAL RULE: Missing, empty, or unparseable timestamps MUST return None (never invent dates)
     assert parse_to_utc_iso(None) is None

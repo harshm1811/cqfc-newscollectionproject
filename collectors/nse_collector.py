@@ -16,15 +16,15 @@ Responsibilities:
 
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-import json
-import time
 import urllib.parse
 import xml.etree.ElementTree as ET
+from urllib.parse import urljoin
 
 from .base_collector import BaseCollector, RawArticleRecord
 from equity.profile import EquityProfile
 from utils.http_client import create_http_session
 from utils.timestamp_parser import parse_to_utc_iso, get_current_utc_iso
+from utils.url_resolver import resolve_google_redirect
 
 try:
     import feedparser
@@ -57,7 +57,7 @@ class NSECollector(BaseCollector):
                 self._session_primed = True
                 return True
         except Exception as e:
-            self.logger.debug(f"Failed to prime NSE session: {e}")
+            self.record_error("prime_session", e)
         return False
 
     def _collect_from_direct_api(self, ticker: str, company_name: str) -> List[RawArticleRecord]:
@@ -87,7 +87,7 @@ class NSECollector(BaseCollector):
                     subject = item.get("attmntNm") or item.get("sm_name") or desc
                     attmnt_url = item.get("attmnt", "") or item.get("attchmntFile", "")
                     if attmnt_url and not attmnt_url.startswith("http"):
-                        attmnt_url = f"{self.base_url}{attmnt_url}"
+                        attmnt_url = urljoin(self.base_url, attmnt_url)
 
                     pub_date = item.get("an_dt") or item.get("broadcastDate")
 
@@ -103,15 +103,18 @@ class NSECollector(BaseCollector):
                         published_at=parse_to_utc_iso(pub_date),
                         first_seen_at=retrieved_now,
                         retrieved_at=retrieved_now,
-                        collector=self.name
+                        collector=self.name,
+                        raw_url=attmnt_url or f"{self.base_url}/get-quotes/equity?symbol={ticker}",
                     )
                     records.append(record)
+            elif resp.status_code != 200:
+                self.record_error("nse_api", f"HTTP {resp.status_code} from NSE announcements API")
         except Exception as e:
-            self.logger.debug(f"Direct NSE API call note: {e}")
+            self.record_error("nse_api", e)
         return records
 
     def _collect_from_announcement_feed(self, ticker: str, company_name: str) -> List[RawArticleRecord]:
-        """Collects official NSE announcements and filings via search-indexed exchange stream."""
+        """Return Google-indexed secondary reporting without claiming it is an NSE filing."""
         records = []
         try:
             clean_name = company_name.replace(" Limited", "").replace(" Ltd.", "").replace(" Ltd", "")
@@ -120,7 +123,9 @@ class NSECollector(BaseCollector):
             rss_url = f"https://news.google.com/rss/search?q={encoded_q}&hl=en-IN&gl=IN&ceid=IN:en"
 
             resp = self.session.get(rss_url, timeout=10)
-            if resp.status_code == 200 and "<item>" in resp.text:
+            if resp.status_code != 200:
+                self.record_error("nse_news_search", f"HTTP {resp.status_code} from Google News RSS")
+            elif "<item>" in resp.text:
                 self.save_raw_payload(ticker, resp.text, identifier="nse_feed")
                 parsed_items = []
                 if HAS_FEEDPARSER:
@@ -130,7 +135,8 @@ class NSECollector(BaseCollector):
                             "title": entry.get("title", ""),
                             "link": entry.get("link", ""),
                             "published": entry.get("published", ""),
-                            "summary": entry.get("summary", "")
+                            "summary": entry.get("summary", ""),
+                            "source": entry.get("source", {}).get("title", "Google News")
                         })
                 else:
                     root = ET.fromstring(resp.text)
@@ -139,33 +145,35 @@ class NSECollector(BaseCollector):
                             "title": item.findtext("title") or "",
                             "link": item.findtext("link") or "",
                             "published": item.findtext("pubDate") or "",
-                            "summary": item.findtext("description") or ""
+                            "summary": item.findtext("description") or "",
+                            "source": (item.find("source").text if item.find("source") is not None else "Google News")
                         })
 
                 retrieved_now = get_current_utc_iso()
                 for item in parsed_items:
-                    title = item.get("title", "")
-                    link = item.get("link", "")
+                    title = item.get("title") or ""
+                    link = item.get("link") or ""
                     if not link or not title:
                         continue
 
                     record = RawArticleRecord(
                         company_name=company_name,
                         ticker=ticker,
-                        title=f"NSE Filing / Announcement: {title}",
+                        title=title,
                         description=item.get("summary", ""),
-                        url=link,
-                        source="NSE Announcements",
-                        source_type="EXCHANGE_FILING",
-                        primary_source=True,
+                        url=resolve_google_redirect(link, session=self.session),
+                        source=item.get("source") or "Google News",
+                        source_type="NEWS_RSS",
+                        primary_source=False,
                         published_at=parse_to_utc_iso(item.get("published")),
                         first_seen_at=retrieved_now,
                         retrieved_at=retrieved_now,
-                        collector=self.name
+                        collector=self.name,
+                        raw_url=link,
                     )
                     records.append(record)
         except Exception as e:
-            self.logger.debug(f"NSE announcement feed note: {e}")
+            self.record_error("nse_news_search", e)
         return records
 
     def collect(
@@ -176,7 +184,7 @@ class NSECollector(BaseCollector):
         queries: Optional[List[str]] = None
     ) -> List[RawArticleRecord]:
         """
-        Executes NSE corporate announcement collection using both direct API and resilient filing stream.
+        Collects official API filings plus distinctly labeled secondary coverage.
         """
         self.logger.info(f"Starting NSE collection for {profile.ticker}")
         records = []
@@ -185,7 +193,7 @@ class NSECollector(BaseCollector):
         direct_records = self._collect_from_direct_api(profile.ticker, profile.company_name)
         records.extend(direct_records)
 
-        # 2. Resilient announcement stream (guarantees coverage if API is empty or rate-limited)
+        # Secondary search results remain NEWS_RSS and are never labeled official.
         feed_records = self._collect_from_announcement_feed(profile.ticker, profile.company_name)
         seen_urls = {r.url for r in records}
         for fr in feed_records:

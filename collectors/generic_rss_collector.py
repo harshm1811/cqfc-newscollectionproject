@@ -85,6 +85,7 @@ class GenericRSSCollector(BaseCollector):
             try:
                 resp = self.session.get(feed_url, timeout=8)
                 if resp.status_code != 200:
+                    self.record_error("fetch_feed", f"HTTP {resp.status_code} for {feed_url}")
                     continue
 
                 raw_xml = resp.text
@@ -97,12 +98,13 @@ class GenericRSSCollector(BaseCollector):
                 if HAS_FEEDPARSER:
                     feed = feedparser.parse(raw_xml)
                     for entry in feed.entries:
+                        publisher = entry.get("source", {}).get("title", feed_name)
                         parsed_items.append({
                             "title": entry.get("title", ""),
                             "link": entry.get("link", ""),
                             "published": entry.get("published", ""),
                             "summary": entry.get("summary", ""),
-                            "source": feed_name
+                            "source": publisher
                         })
                 else:
                     root = ET.fromstring(raw_xml)
@@ -112,15 +114,15 @@ class GenericRSSCollector(BaseCollector):
                             "link": item.findtext("link") or "",
                             "published": item.findtext("pubDate") or "",
                             "summary": item.findtext("description") or "",
-                            "source": feed_name
+                            "source": item.findtext("source") or feed_name
                         })
 
                 retrieved_now = get_current_utc_iso()
 
                 for item in parsed_items:
-                    link = item.get("link", "").strip()
-                    title = item.get("title", "").strip()
-                    summary = item.get("summary", "").strip()
+                    link = (item.get("link") or "").strip()
+                    title = (item.get("title") or "").strip()
+                    summary = (item.get("summary") or "").strip()
 
                     if not link or not title or link in seen_urls:
                         continue
@@ -139,18 +141,19 @@ class GenericRSSCollector(BaseCollector):
                         title=title,
                         description=summary,
                         url=link,
-                        source=feed_name,
+                        source=item.get("source") or feed_name,
                         source_type="NEWS_RSS",
                         primary_source=False,
                         published_at=parse_to_utc_iso(item.get("published")),
                         first_seen_at=retrieved_now,
                         retrieved_at=retrieved_now,
-                        collector=self.name
+                        collector=self.name,
+                        raw_url=link,
                     )
                     records.append(record)
 
             except Exception as e:
-                self.logger.debug(f"Feed '{feed_name}' notice: {e}")
+                self.record_error(f"feed:{feed_name}", e)
 
         self.logger.info(f"Generic RSS collected {len(records)} relevant items for {profile.ticker}")
         return records

@@ -15,19 +15,12 @@ Responsibilities:
 
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-import urllib.parse
-import xml.etree.ElementTree as ET
+import re
 
 from .base_collector import BaseCollector, RawArticleRecord
 from equity.profile import EquityProfile
 from utils.http_client import create_http_session
 from utils.timestamp_parser import parse_to_utc_iso, get_current_utc_iso
-
-try:
-    import feedparser
-    HAS_FEEDPARSER = True
-except ImportError:
-    HAS_FEEDPARSER = False
 
 
 class BSECollector(BaseCollector):
@@ -41,61 +34,8 @@ class BSECollector(BaseCollector):
         self.base_url = "https://api.bseindia.com"
 
     def _collect_from_announcement_feed(self, ticker: str, company_name: str) -> List[RawArticleRecord]:
-        records = []
-        try:
-            clean_name = company_name.replace(" Limited", "").replace(" Ltd.", "").replace(" Ltd", "")
-            query = f'site:bseindia.com OR "BSE" filing "{clean_name}" OR "{ticker}"'
-            encoded_q = urllib.parse.quote_plus(query)
-            rss_url = f"https://news.google.com/rss/search?q={encoded_q}&hl=en-IN&gl=IN&ceid=IN:en"
-
-            resp = self.session.get(rss_url, timeout=10)
-            if resp.status_code == 200 and "<item>" in resp.text:
-                self.save_raw_payload(ticker, resp.text, identifier="bse_feed")
-                parsed_items = []
-                if HAS_FEEDPARSER:
-                    feed = feedparser.parse(resp.text)
-                    for entry in feed.entries:
-                        parsed_items.append({
-                            "title": entry.get("title", ""),
-                            "link": entry.get("link", ""),
-                            "published": entry.get("published", ""),
-                            "summary": entry.get("summary", "")
-                        })
-                else:
-                    root = ET.fromstring(resp.text)
-                    for item in root.findall(".//item"):
-                        parsed_items.append({
-                            "title": item.findtext("title") or "",
-                            "link": item.findtext("link") or "",
-                            "published": item.findtext("pubDate") or "",
-                            "summary": item.findtext("description") or ""
-                        })
-
-                retrieved_now = get_current_utc_iso()
-                for item in parsed_items:
-                    title = item.get("title", "")
-                    link = item.get("link", "")
-                    if not link or not title:
-                        continue
-
-                    record = RawArticleRecord(
-                        company_name=company_name,
-                        ticker=ticker,
-                        title=f"BSE Filing / Announcement: {title}",
-                        description=item.get("summary", ""),
-                        url=link,
-                        source="BSE Announcements",
-                        source_type="EXCHANGE_FILING",
-                        primary_source=True,
-                        published_at=parse_to_utc_iso(item.get("published")),
-                        first_seen_at=retrieved_now,
-                        retrieved_at=retrieved_now,
-                        collector=self.name
-                    )
-                    records.append(record)
-        except Exception as e:
-            self.logger.debug(f"BSE announcement stream note: {e}")
-        return records
+        """No fallback is used: Google News results cannot be represented as BSE filings."""
+        return []
 
     def collect(
         self,
@@ -110,6 +50,13 @@ class BSECollector(BaseCollector):
         self.logger.info(f"Starting BSE collection for {profile.ticker}")
         records: List[RawArticleRecord] = []
 
+        scrip_code = getattr(profile, "bse_scrip_code", None)
+        if not scrip_code or not re.fullmatch(r"\d{6}", str(scrip_code)):
+            self.mark_unsupported(
+                "No verified six-digit BSE scrip-code mapping is available for this equity; request not sent"
+            )
+            return records
+
         # 1. Try Direct BSE API
         try:
             endpoint = f"{self.base_url}/BseIndiaAPI/api/AnnSubCategoryGetData/w"
@@ -120,10 +67,10 @@ class BSECollector(BaseCollector):
             }
             params = {
                 "strCat": "-1",
-                "strPrevDate": (start_date or datetime.now()).strftime("%Y%m%d"),
-                "strScrip": profile.ticker,
+                "strPrevDate": (start_date or datetime.now().astimezone()).strftime("%Y%m%d"),
+                "strScrip": str(scrip_code),
                 "strSearch": "P",
-                "strToDate": (end_date or datetime.now()).strftime("%Y%m%d"),
+                "strToDate": (end_date or datetime.now().astimezone()).strftime("%Y%m%d"),
                 "strType": "C"
             }
 
@@ -152,19 +99,14 @@ class BSECollector(BaseCollector):
                         published_at=parse_to_utc_iso(item.get("NEWS_DT")),
                         first_seen_at=retrieved_now,
                         retrieved_at=retrieved_now,
-                        collector=self.name
+                        collector=self.name,
+                        raw_url=pdf_url,
                     )
                     records.append(record)
+            else:
+                self.record_error("bse_api", f"HTTP {resp.status_code} from BSE announcements API")
         except Exception as e:
-            self.logger.debug(f"Direct BSE API call note: {e}")
-
-        # 2. Resilient BSE Filing Feed
-        feed_records = self._collect_from_announcement_feed(profile.ticker, profile.company_name)
-        seen_urls = {r.url for r in records}
-        for fr in feed_records:
-            if fr.url not in seen_urls:
-                records.append(fr)
-                seen_urls.add(fr.url)
+            self.record_error("bse_api", e)
 
         self.logger.info(f"BSE collected {len(records)} announcements for {profile.ticker}")
         return records

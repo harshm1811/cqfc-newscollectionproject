@@ -12,7 +12,7 @@ Responsibilities:
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 import urllib.parse
 import time
 import xml.etree.ElementTree as ET
@@ -42,14 +42,16 @@ class GoogleNewsRSSCollector(BaseCollector):
         self.hl = self.gnews_cfg.get("language", "en-IN")
         self.gl = self.gnews_cfg.get("country_code", "IN")
         self.resolve_redirects = self.gnews_cfg.get("resolve_redirect_urls", False)
-        self.max_queries = self.gnews_cfg.get("max_queries", 6)
+        self.max_queries = self.gnews_cfg.get("max_queries", 20)
+        self.max_articles_per_query = self.gnews_cfg.get("max_articles_per_query", 20)
+        self._last_raw_xml = ""
 
     def _build_rss_url(self, query: str, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> str:
         q_str = query
         if start_date:
-            q_str += f" after:{start_date.strftime('%Y-%m-%d')}"
+            q_str += f" after:{(start_date.date() - timedelta(days=1)).strftime('%Y-%m-%d')}"
         if end_date:
-            q_str += f" before:{end_date.strftime('%Y-%m-%d')}"
+            q_str += f" before:{(end_date.date() + timedelta(days=1)).strftime('%Y-%m-%d')}"
 
         encoded_q = urllib.parse.quote_plus(q_str)
         return f"https://news.google.com/rss/search?q={encoded_q}&hl={self.hl}&gl={self.gl}&ceid={self.gl}:{self.hl.split('-')[0]}"
@@ -82,12 +84,15 @@ class GoogleNewsRSSCollector(BaseCollector):
         return items
 
     def _fetch_rss(self, url: str) -> List[Dict[str, Any]]:
+        self._last_raw_xml = ""
         try:
             resp = self.session.get(url, timeout=6)
             if resp.status_code != 200:
+                self.record_error("fetch_rss", f"HTTP {resp.status_code} for {url}")
                 return []
 
             raw_xml = resp.text
+            self._last_raw_xml = raw_xml
             if "<item>" not in raw_xml:
                 return []
 
@@ -107,7 +112,7 @@ class GoogleNewsRSSCollector(BaseCollector):
 
             return items
         except Exception as e:
-            self.logger.debug(f"RSS fetch error: {e}")
+            self.record_error("fetch_rss", e)
             return []
 
     def collect(
@@ -148,14 +153,14 @@ class GoogleNewsRSSCollector(BaseCollector):
             rss_url = self._build_rss_url(q, start_date=start_date, end_date=end_date)
             parsed_items = self._fetch_rss(rss_url)
 
-            if parsed_items:
-                self.save_raw_payload(profile.ticker, parsed_items, identifier=f"gnews_{idx}")
+            if self._last_raw_xml:
+                self.save_raw_payload(profile.ticker, self._last_raw_xml, identifier=f"gnews_{idx}")
 
             retrieved_now = get_current_utc_iso()
 
-            for item in parsed_items:
-                link = item.get("link", "").strip()
-                title = item.get("title", "").strip()
+            for item in parsed_items[:self.max_articles_per_query]:
+                link = (item.get("link") or "").strip()
+                title = (item.get("title") or "").strip()
                 if not link or not title:
                     continue
 
@@ -169,19 +174,22 @@ class GoogleNewsRSSCollector(BaseCollector):
                 if self.resolve_redirects:
                     final_url = resolve_google_redirect(link, session=self.session)
 
+                source = item.get("source") or "Google News"
+
                 record = RawArticleRecord(
                     company_name=profile.company_name,
                     ticker=profile.ticker,
                     title=title,
                     description=item.get("summary", "").strip(),
                     url=final_url,
-                    source=item.get("source", "Google News"),
+                    source=source,
                     source_type="NEWS_RSS",
                     primary_source=False,
                     published_at=parse_to_utc_iso(item.get("published")),
                     first_seen_at=retrieved_now,
                     retrieved_at=retrieved_now,
-                    collector=self.name
+                    collector=self.name,
+                    raw_url=link,
                 )
                 records.append(record)
 

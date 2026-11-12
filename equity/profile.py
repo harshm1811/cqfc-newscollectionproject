@@ -22,6 +22,7 @@ class EquityProfile(BaseModel):
     exchange: str = Field(default="NSE", description="Primary exchange, e.g. 'NSE' or 'BSE'")
     country: str = Field(default="India", description="Country of primary listing")
     isin: Optional[str] = Field(default=None, description="ISIN number, e.g. 'INE002A01018'")
+    bse_scrip_code: Optional[str] = Field(default=None, description="Verified BSE scrip code, if available")
     
     aliases: List[str] = Field(
         default_factory=list,

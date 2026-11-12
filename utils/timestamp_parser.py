@@ -12,6 +12,7 @@ CORE PRINCIPLES (Group 1 Project Spec):
 
 from typing import Optional
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import email.utils
 import re
 
@@ -20,6 +21,15 @@ try:
     HAS_DATEUTIL = True
 except ImportError:
     HAS_DATEUTIL = False
+
+INDIA_TZ = ZoneInfo("Asia/Kolkata")
+
+
+def _to_utc(dt: datetime) -> datetime:
+    """Interpret naive Indian feed/exchange timestamps as IST, then normalize."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=INDIA_TZ)
+    return dt.astimezone(timezone.utc)
 
 
 # Common Indian exchange date patterns (e.g. "27-Oct-2026 14:30:00", "28/10/2026 09:15:00")
@@ -56,11 +66,7 @@ def parse_to_utc_iso(date_str: Optional[str]) -> Optional[str]:
     if HAS_DATEUTIL:
         try:
             dt = dateutil.parser.parse(clean_str)
-            if dt.tzinfo is None:
-                # Default Indian timezone (IST = UTC+5:30) for naive exchange dates if indicated
-                dt = dt.replace(tzinfo=timezone.utc)
-            else:
-                dt = dt.astimezone(timezone.utc)
+            dt = _to_utc(dt)
             return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         except Exception:
             pass
@@ -69,10 +75,7 @@ def parse_to_utc_iso(date_str: Optional[str]) -> Optional[str]:
     try:
         parsed_tuple = email.utils.parsedate_to_datetime(clean_str)
         if parsed_tuple:
-            if parsed_tuple.tzinfo is None:
-                parsed_tuple = parsed_tuple.replace(tzinfo=timezone.utc)
-            else:
-                parsed_tuple = parsed_tuple.astimezone(timezone.utc)
+            parsed_tuple = _to_utc(parsed_tuple)
             return parsed_tuple.strftime("%Y-%m-%dT%H:%M:%SZ")
     except Exception:
         pass
@@ -81,10 +84,7 @@ def parse_to_utc_iso(date_str: Optional[str]) -> Optional[str]:
     try:
         iso_clean = clean_str.replace("Z", "+00:00")
         dt = datetime.fromisoformat(iso_clean)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        else:
-            dt = dt.astimezone(timezone.utc)
+        dt = _to_utc(dt)
         return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     except Exception:
         pass
@@ -93,7 +93,7 @@ def parse_to_utc_iso(date_str: Optional[str]) -> Optional[str]:
     for fmt in CUSTOM_FORMATS:
         try:
             dt = datetime.strptime(clean_str, fmt)
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = _to_utc(dt)
             return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         except Exception:
             continue

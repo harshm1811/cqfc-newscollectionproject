@@ -23,6 +23,7 @@ from .base_collector import BaseCollector, RawArticleRecord
 from equity.profile import EquityProfile
 from utils.http_client import create_http_session
 from utils.timestamp_parser import parse_to_utc_iso, get_current_utc_iso
+from utils.url_resolver import resolve_google_redirect
 
 try:
     import feedparser
@@ -62,7 +63,9 @@ class SEBICollector(BaseCollector):
             rss_url = f"https://news.google.com/rss/search?q={encoded_q}&hl=en-IN&gl=IN&ceid=IN:en"
 
             resp = self.session.get(rss_url, timeout=10)
-            if resp.status_code == 200 and "<item>" in resp.text:
+            if resp.status_code != 200:
+                self.record_error("sebi_news_search", f"HTTP {resp.status_code} from Google News RSS")
+            elif "<item>" in resp.text:
                 self.save_raw_payload(ticker, resp.text, identifier="sebi_feed")
                 parsed_items = []
                 if HAS_FEEDPARSER:
@@ -72,7 +75,8 @@ class SEBICollector(BaseCollector):
                             "title": entry.get("title", ""),
                             "link": entry.get("link", ""),
                             "published": entry.get("published", ""),
-                            "summary": entry.get("summary", "")
+                            "summary": entry.get("summary", ""),
+                            "source": entry.get("source", {}).get("title", "Google News")
                         })
                 else:
                     root = ET.fromstring(resp.text)
@@ -81,33 +85,35 @@ class SEBICollector(BaseCollector):
                             "title": item.findtext("title") or "",
                             "link": item.findtext("link") or "",
                             "published": item.findtext("pubDate") or "",
-                            "summary": item.findtext("description") or ""
+                            "summary": item.findtext("description") or "",
+                            "source": (item.find("source").text if item.find("source") is not None else "Google News")
                         })
 
                 retrieved_now = get_current_utc_iso()
                 for item in parsed_items:
-                    title = item.get("title", "")
-                    link = item.get("link", "")
+                    title = item.get("title") or ""
+                    link = item.get("link") or ""
                     if not link or not title:
                         continue
 
                     record = RawArticleRecord(
                         company_name=company_name,
                         ticker=ticker,
-                        title=f"SEBI Notice: {title}",
+                        title=title,
                         description=item.get("summary", ""),
-                        url=link,
-                        source="SEBI Regulatory Feed",
-                        source_type="REGULATORY",
-                        primary_source=True,
+                        url=resolve_google_redirect(link, session=self.session),
+                        source=item.get("source") or "Google News",
+                        source_type="NEWS_RSS",
+                        primary_source=False,
                         published_at=parse_to_utc_iso(item.get("published")),
                         first_seen_at=retrieved_now,
                         retrieved_at=retrieved_now,
-                        collector=self.name
+                        collector=self.name,
+                        raw_url=link,
                     )
                     records.append(record)
         except Exception as e:
-            self.logger.debug(f"SEBI regulatory stream note: {e}")
+            self.record_error("sebi_news_search", e)
         return records
 
     def collect(
@@ -156,11 +162,14 @@ class SEBICollector(BaseCollector):
                             published_at=None,
                             first_seen_at=retrieved_now,
                             retrieved_at=retrieved_now,
-                            collector=self.name
+                            collector=self.name,
+                            raw_url=full_url,
                         )
                         records.append(record)
+            else:
+                self.record_error("sebi_portal", f"HTTP {resp.status_code} from SEBI portal")
         except Exception as e:
-            self.logger.debug(f"Direct SEBI portal note: {e}")
+            self.record_error("sebi_portal", e)
 
         # 2. Resilient regulatory feed (captures all indexed SEBI actions for this company)
         feed_records = self._collect_from_regulatory_feed(profile.ticker, profile.company_name)
