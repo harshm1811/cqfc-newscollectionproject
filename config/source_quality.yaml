@@ -1,17 +1,23 @@
-# Experimental starting assumptions. Calibrate these against labeled source data.
+# Source quality hierarchy: official filings/announcements, established financial
+# publishers, general publishers, aggregators, then unknown. These are configurable
+# ordinal starting weights, not claims of predictive accuracy.
 category_weights:
   exchange_filing: 1.00
   regulatory_announcement: 0.98
   official_company_announcement: 0.95
   investor_relations: 0.92
-  major_financial_publication: 0.82
+  major_financial_publication: 0.86
   general_publication: 0.65
+  recognized_indian_financial_publication: 0.82
   aggregator: 0.40
   unknown: 0.50
 
 source_type_categories:
   exchange: exchange_filing
   exchange_filing: exchange_filing
+  news_rss: general_publication
+  rss: general_publication
+  regulatory_announcement: regulatory_announcement
   regulatory: regulatory_announcement
   regulatory_announcement: regulatory_announcement
   company_announcement: official_company_announcement
@@ -22,7 +28,13 @@ source_type_categories:
   publication: general_publication
   aggregator: aggregator
 
-# Explicit source-name rules. Add organization names here as needed.
-source_categories: {}
+# Explicit publisher rules take precedence over broad ingestion source types.
+source_categories:
+  reuters: major_financial_publication
+  bloomberg: major_financial_publication
+  mint: recognized_indian_financial_publication
+  economic times: recognized_indian_financial_publication
+  the economic times: recognized_indian_financial_publication
+  business standard: recognized_indian_financial_publication
 primary_confirmation_bonus: 0.05
 independent_confirmation_bonus: 0.03

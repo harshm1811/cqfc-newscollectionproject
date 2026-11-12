@@ -1,4 +1,5 @@
 from models.source_quality import aggregate_event_source_quality, categorize_source
+from models.source_quality import score_article_source_quality
 
 
 def test_source_category_and_independence_are_explicit():
@@ -43,3 +44,27 @@ def test_event_corroboration_bonuses_are_applied_once():
         ],
     )
     assert syndicated["source_quality_components"]["unique_article_count"] == 1
+
+
+def test_source_type_and_publisher_hierarchy():
+    assert categorize_source({"source": "Reuters", "source_type": "NEWS_RSS"}) == "major_financial_publication"
+    assert categorize_source({"source": "Bloomberg", "source_type": "NEWS_RSS"}) == "major_financial_publication"
+    for publisher in ("Mint", "Economic Times", "Business Standard"):
+        assert categorize_source({"source": publisher, "source_type": "NEWS_RSS"}) == "recognized_indian_financial_publication"
+    assert categorize_source({"source": "unknown outlet", "source_type": "NEWS_RSS"}) == "general_publication"
+    assert categorize_source({"source": "unlisted", "source_type": "unlisted"}) == "unknown"
+    assert score_article_source_quality({"source": "Reuters", "source_type": "NEWS_RSS"})["source_quality"] == 0.86
+    assert score_article_source_quality({"source": "Mint", "source_type": "NEWS_RSS"})["source_quality"] == 0.82
+    assert score_article_source_quality({"source": "unknown outlet", "source_type": "NEWS_RSS"})["source_quality"] == 0.65
+    assert score_article_source_quality({"source": "unlisted", "source_type": "unlisted"})["source_quality"] == 0.50
+
+
+def test_source_quality_bonus_is_capped_at_one():
+    result = aggregate_event_source_quality(
+        {"event_id": "cap", "primary_source_confirmed": True},
+        [
+            {"article_id": "a", "source": "company", "source_type": "company_announcement", "independent_source": True},
+            {"article_id": "b", "source": "company", "source_type": "company_announcement", "independent_source": True},
+        ],
+    )
+    assert result["source_quality"] == 1.0

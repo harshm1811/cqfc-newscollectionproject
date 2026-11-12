@@ -14,9 +14,11 @@ def add_rolling_sentiment(daily: pd.DataFrame, windows=(1, 3, 7, 30), *, value_c
         g["date"] = pd.to_datetime(g["date"], utc=True).dt.normalize()
         g = g.sort_values("date").set_index("date")
         if fill_missing_dates:
+            observed_dates = g.index
             g = g.asfreq("D")
             g["ticker"] = ticker
-            g[value_col] = g[value_col].fillna(0.0)
+            inserted_dates = ~g.index.isin(observed_dates)
+            g.loc[inserted_dates, value_col] = 0.0
         for n in windows:
             # Right-closed interval (date - (n-1) days, date], exactly n calendar dates.
             g[f"Sentiment{n}D"] = g[value_col].rolling(f"{int(n)}D", min_periods=1, closed="right").mean()

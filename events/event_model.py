@@ -197,6 +197,16 @@ class Event:
 
     # Importance and source metadata
     importance_score: Optional[float] = None
+    relevance_score: Optional[float] = None
+    source_quality: Optional[float] = None
+    time_weight: Optional[float] = None
+    final_event_weight: Optional[float] = None
+    sentiment_contribution: Optional[float] = None
+    source_quality_category: List[str] = field(default_factory=list)
+    source_quality_breakdown: Dict[str, Any] = field(default_factory=dict)
+    importance_breakdown: Dict[str, Optional[float]] = field(default_factory=dict)
+    time_weight_breakdown: Dict[str, Any] = field(default_factory=dict)
+    weight_missing_inputs: List[str] = field(default_factory=list)
     article_count: int = 0
     independent_source_count: int = 0
     publisher_count: int = 0
@@ -227,6 +237,16 @@ class Event:
             "neutral_probability": self.neutral_probability,
             "negative_probability": self.negative_probability,
             "importance_score": self.importance_score,
+            "relevance_score": self.relevance_score,
+            "source_quality": self.source_quality,
+            "time_weight": self.time_weight,
+            "final_event_weight": self.final_event_weight,
+            "sentiment_contribution": self.sentiment_contribution,
+            "source_quality_category": self.source_quality_category,
+            "source_quality_breakdown": self.source_quality_breakdown,
+            "importance_breakdown": self.importance_breakdown,
+            "time_weight_breakdown": self.time_weight_breakdown,
+            "weight_missing_inputs": self.weight_missing_inputs,
             "article_count": self.article_count,
             "publisher_count": self.publisher_count,
             "independent_source_count": self.independent_source_count,

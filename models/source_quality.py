@@ -99,6 +99,15 @@ def aggregate_event_source_quality(event, articles, *, config=None):
     independent_bonus = float(cfg.get("independent_confirmation_bonus", 0.03)) if explicit_independent > 1 else 0.0
     final = min(1.0, base_quality + primary_bonus + independent_bonus)
     categories = sorted({quality_by_id[r.get("article_id")]["source_category"][0] for r in unique_rows})
+    evidence = [
+        {
+            "article_id": row.get("article_id"),
+            "publisher": row.get("source") or None,
+            "category": quality_by_id[row.get("article_id")]["source_category"][0],
+            "category_weight": quality_by_id[row.get("article_id")]["source_quality_components"]["category_weight"],
+        }
+        for row in unique_rows
+    ]
     return {
         "event_id": event_row.get("event_id"),
         "source_quality": final,
@@ -111,6 +120,7 @@ def aggregate_event_source_quality(event, articles, *, config=None):
             "explicit_independent_source_count": explicit_independent,
             "independent_confirmation_bonus": independent_bonus,
             "categories": categories,
+            "article_source_evidence": evidence,
         },
     }
 
