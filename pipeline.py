@@ -152,10 +152,21 @@ def run_group3_pipeline(
         time_decay_config=time_decay_config,
     )
 
-    # Populate importance_score back onto Event objects
+    # Preserve exact event scoring values and diagnostics in the downstream record.
     for ev in events:
         if ev.event_id in event_scores:
-            ev.importance_score = event_scores[ev.event_id].get("importance_score")
+            score = event_scores[ev.event_id]
+            ev.importance_score = score.get("importance_score")
+            ev.relevance_score = score.get("relevance_score")
+            ev.source_quality = score.get("source_quality")
+            ev.time_weight = score.get("time_weight")
+            ev.final_event_weight = score.get("final_event_weight")
+            ev.sentiment_contribution = score.get("sentiment_contribution")
+            ev.source_quality_category = score.get("source_quality_category", [])
+            ev.source_quality_breakdown = score.get("source_quality_breakdown", {})
+            ev.importance_breakdown = score.get("importance_breakdown", {})
+            ev.time_weight_breakdown = score.get("time_weight_breakdown", {})
+            ev.weight_missing_inputs = score.get("weight_missing_inputs", [])
 
     # 6. Adapt enriched outputs for feature engine
     adf, edf, mdf = adapt_enriched_outputs(

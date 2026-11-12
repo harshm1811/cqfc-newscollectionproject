@@ -95,6 +95,10 @@ def test_full_group3_pipeline_with_group2_mock_data():
         assert 0.0 <= rec["importance_score"] <= 1.0
         prob_sum = rec["positive_probability"] + rec["neutral_probability"] + rec["negative_probability"]
         assert abs(prob_sum - 1.0) < 1e-4
+        assert 0.0 <= rec["source_quality"] <= 1.0
+        assert 0.0 <= rec["final_event_weight"] <= 1.0
+        assert rec["source_quality_category"]
+        assert "category_quality_mean" in rec["source_quality_breakdown"]
 
     # Check earnings event details
     earnings_event = next(e for e in result.events if e.article_count == 2)
