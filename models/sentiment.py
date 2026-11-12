@@ -2,8 +2,8 @@
 models/sentiment.py - Financial sentiment (FinBERT) + event-level aggregation.
 
 * Article level: P(pos), P(neu), P(neg), sentiment_score = P(pos) - P(neg).
-* Event level: NOT a plain mean of articles. Syndicated copies of the same
-  story would dominate, so each *independent source* gets one vote
+* Event level: NOT a plain mean of articles. Repeated articles from the same
+  publisher would dominate, so each publisher group gets one vote
   (articles within a source are averaged first), and primary-source articles
   can be given extra weight. Probabilities are averaged and re-normalised,
   then score = P(pos) - P(neg) is recomputed from the aggregate probabilities.
@@ -118,7 +118,9 @@ def score_articles(articles: Sequence[Article], model: SentimentModel) -> List[A
 # Event level
 # --------------------------------------------------------------------------- #
 def _source_key(a: Article) -> str:
-    return (a.source or a.url).strip().lower()
+    # Publisher grouping limits repeated publisher influence; it does not
+    # establish source independence or common origin.
+    return (a.source or a.url).strip().casefold()
 
 
 def aggregate_event_sentiment(
@@ -165,6 +167,9 @@ def aggregate_event_sentiment(
         "neutral_probability": r.neutral_probability,
         "negative_probability": r.negative_probability,
         "sentiment_score": r.sentiment_score,
-        "independent_source_count": len(groups),
+        "independent_source_count": len({
+            str(getattr(a, "independent_source_id", None) or a.source or a.article_id).casefold()
+            for arts in groups.values() for a in arts if a.independent_source is True
+        }),
         "primary_source_confirmed": primary,
     }

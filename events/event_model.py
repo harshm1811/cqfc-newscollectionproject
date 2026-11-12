@@ -93,7 +93,8 @@ class Article:
     source: str = ""
     source_type: str = ""
     primary_source: bool = False
-    independent_source: bool = True
+    independent_source: Optional[bool] = None
+    independent_source_id: Optional[str] = None
     relevance_score: float = 1.0
     duplicate_cluster_id: Optional[str] = None
     published_at: Optional[datetime] = None
@@ -108,9 +109,9 @@ class Article:
         return self.title
 
     @property
-    def timestamp(self) -> datetime:
-        """Best available time: published_at, else first_seen_at, else epoch."""
-        return self.published_at or self.first_seen_at or datetime(1970, 1, 1, tzinfo=timezone.utc)
+    def timestamp(self) -> Optional[datetime]:
+        """Best observed time, or None when Group 2 supplied no usable timestamp."""
+        return self.published_at or self.first_seen_at
 
     @classmethod
     def from_raw(cls, raw: Any) -> "Article":
@@ -137,11 +138,7 @@ class Article:
         except (ValueError, TypeError):
             rel = 1.0
 
-        indep = g("independent_source")
-        if indep is None:
-            indep = True
-        else:
-            indep = bool(indep)
+        indep = parse_optional_bool(g("independent_source"))
 
         return cls(
             article_id=str(aid),
@@ -153,14 +150,14 @@ class Article:
             url=url,
             source=g("source", "") or "",
             source_type=g("source_type", "") or "",
-            primary_source=bool(g("primary_source", False)),
+            primary_source=parse_optional_bool(g("primary_source", False)) is True,
             independent_source=indep,
+            independent_source_id=g("independent_source_id", g("source_origin_id")),
             relevance_score=rel,
             duplicate_cluster_id=g("duplicate_cluster_id"),
             published_at=parse_iso(g("published_at")),
             first_seen_at=parse_iso(g("first_seen_at")),
         )
-
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["published_at"] = self.published_at.isoformat() if self.published_at else None
@@ -202,6 +199,7 @@ class Event:
     importance_score: Optional[float] = None
     article_count: int = 0
     independent_source_count: int = 0
+    publisher_count: int = 0
     primary_source_confirmed: bool = False
 
     @property
@@ -230,6 +228,7 @@ class Event:
             "negative_probability": self.negative_probability,
             "importance_score": self.importance_score,
             "article_count": self.article_count,
+            "publisher_count": self.publisher_count,
             "independent_source_count": self.independent_source_count,
             "primary_source_present": self.primary_source_present,
         }
@@ -243,3 +242,16 @@ class Event:
         d["headline"] = self.title
         d["primary_source_present"] = self.primary_source_confirmed
         return d
+
+
+def parse_optional_bool(value):
+    """Parse explicit boolean metadata; preserve missing/invalid as unknown."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if normalized in {"true", "1", "yes"}: return True
+        if normalized in {"false", "0", "no"}: return False
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    return None

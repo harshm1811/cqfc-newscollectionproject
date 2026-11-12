@@ -111,7 +111,7 @@ class EventClusterer:
         uniq: Dict[str, Article] = {}
         for a in articles:
             uniq.setdefault(a.article_id, a)
-        ordered = sorted(uniq.values(), key=lambda a: (a.timestamp, a.article_id))
+        ordered = sorted(uniq.values(), key=lambda a: (a.timestamp is None, a.timestamp, a.article_id))
         if not ordered:
             return [], []
 
@@ -129,9 +129,9 @@ class EventClusterer:
             best_eid, best_sim = None, 0.0
             for eid in by_ticker[art.ticker]:
                 arts = members[eid]
-                if art.timestamp - arts[0].timestamp > max_age:
+                if art.timestamp is not None and arts[0].timestamp is not None and art.timestamp - arts[0].timestamp > max_age:
                     continue
-                if art.timestamp - arts[-1].timestamp > window:
+                if art.timestamp is not None and arts[-1].timestamp is not None and art.timestamp - arts[-1].timestamp > window:
                     continue
                 same_cluster = bool(art.duplicate_cluster_id and any(m.duplicate_cluster_id == art.duplicate_cluster_id for m in arts))
                 sim = 1.0 if same_cluster else max(cosine(vecs[art.article_id], vecs[m.article_id]) for m in arts)
@@ -157,15 +157,20 @@ class EventClusterer:
             for t, x in vecs[a.article_id].items():
                 centroid[t] += x
         rep = max(arts, key=lambda a: cosine(vecs[a.article_id], centroid)) if len(arts) > 1 else arts[0]
+        observed_times = [a.timestamp for a in arts if a.timestamp is not None]
         return Event(
             event_id=eid,
             ticker=arts[0].ticker,
             title=rep.title,
             article_ids=[a.article_id for a in arts],
-            first_article_at=arts[0].timestamp,
-            last_article_at=arts[-1].timestamp,
+            first_article_at=min(observed_times) if observed_times else None,
+            last_article_at=max(observed_times) if observed_times else None,
             article_count=len(arts),
-            independent_source_count=len({(a.source or a.url).lower() for a in arts}),
+            independent_source_count=len({
+                str(getattr(a, "independent_source_id", None) or a.source or a.article_id).casefold()
+                for a in arts if a.independent_source is True
+            }),
+            publisher_count=len({a.source.strip().casefold() for a in arts if a.source.strip()}),
             primary_source_confirmed=any(a.primary_source for a in arts),
         )
 

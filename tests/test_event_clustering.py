@@ -75,7 +75,24 @@ def test_event_metadata_sources_and_primary():
             art(2, "Reliance Q2 net profit rises 12% crore", "2025-10-20T10:30:00Z", source="Mint"),
             art(3, "Reliance Q2 net profit rises 12% says report", "2025-10-20T11:00:00Z", source="Mint")]
     (ev,), _ = EventClusterer().cluster(arts)
-    assert ev.independent_source_count == 2 and ev.primary_source_confirmed
+    assert ev.independent_source_count == 0 and ev.publisher_count == 2 and ev.primary_source_confirmed
+
+
+def test_independence_metadata_is_tristate_and_explicit():
+    from events.event_model import Article
+    assert Article.from_raw({"title": "x"}).independent_source is None
+    assert Article.from_raw({"title": "x", "independent_source": True}).independent_source is True
+    assert Article.from_raw({"title": "x", "independent_source": False}).independent_source is False
+    assert Article.from_raw({"title": "x", "independent_source": "true"}).independent_source is True
+    assert Article.from_raw({"title": "x", "independent_source": "false"}).independent_source is False
+    assert Article.from_raw({"title": "x", "independent_source": "unknown"}).independent_source is None
+
+
+def test_missing_article_timestamp_is_not_replaced_with_epoch():
+    article = Article.from_raw({"ticker": "ABC", "title": "Company announces earnings"})
+    (event,), _ = EventClusterer().cluster([article])
+    assert article.timestamp is None
+    assert event.event_timestamp is None
 
 
 def test_end_to_end_enrichment():

@@ -97,6 +97,7 @@ def calculate_time_weight(event, *, as_of=None, config=None):
         "lambda_used": log(2.0) / cfg.half_life_hours,
         "half_life_hours": cfg.half_life_hours,
         "timestamp_used": timestamp.isoformat() if timestamp else None,
+        "timestamp_fallback_used": timestamp is None,
     }
 
 

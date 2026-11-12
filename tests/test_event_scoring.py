@@ -15,7 +15,9 @@ def test_adapter_none_importance_is_later_filled_as_one_by_person3_logic():
     )
     assert pd.isna(events.loc[0, "importance_score"])
     contributions = event_contributions(events)
-    assert contributions.loc[0, "importance_score"] == 1.0
+    assert pd.isna(contributions.loc[0, "importance_score"])
+    assert contributions.loc[0, "weight"] == 0.0
+    assert contributions.loc[0, "score_missing_reason"] == "importance_score"
 
 
 def test_event_scores_have_exact_adapter_keys():

@@ -1,4 +1,5 @@
 import pytest
+from events.event_model import EventType
 
 from models.importance import ImportanceConfig, score_event_importance
 
@@ -31,3 +32,11 @@ def test_missing_importance_factors_are_reported_and_not_imputed():
     assert result["importance_score"] is None
     assert len(result["missing_factors"]) == 8
     assert result["available_weight"] == 0
+
+
+@pytest.mark.parametrize("event_type", list(EventType))
+def test_all_official_event_types_have_scores_and_enum_matches_string(event_type):
+    enum_result = score_event_importance({"event_type": event_type})
+    string_result = score_event_importance({"event_type": event_type.value.lower()})
+    assert enum_result["importance_components"]["event_type"] is not None
+    assert enum_result["importance_score"] == pytest.approx(string_result["importance_score"])

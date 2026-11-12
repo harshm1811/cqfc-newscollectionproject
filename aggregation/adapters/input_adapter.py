@@ -41,6 +41,7 @@ class InputAdapterConfig:
     mock_source_quality: float = 0.75
     mock_time_weight: float = 1.0
     mock_relevance: float = 1.0
+    mock_mode: bool = True
     mock_fields: tuple[str, ...] = field(default=("importance_score", "source_quality", "time_weight"))
 
 
@@ -71,11 +72,12 @@ def adapt_enriched_outputs(articles, events, mappings, *, event_scores=None,
         adf["relevance"] = adf.apply(
             lambda r: relevance_by_article.get(
                 r.get("article_id"),
-                r.get("relevance_score", r.get("relevance", config.mock_relevance))
+                r.get("relevance_score", r.get("relevance", config.mock_relevance if config.mock_mode else None))
             ),
             axis=1,
         )
-    for field, default in (("importance_score", config.mock_importance), ("source_quality", config.mock_source_quality), ("time_weight", config.mock_time_weight)):
+    for field, mock_default in (("importance_score", config.mock_importance), ("source_quality", config.mock_source_quality), ("time_weight", config.mock_time_weight)):
+        default = mock_default if config.mock_mode else None
         if field not in edf:
             edf[field] = default
         if not edf.empty:
@@ -86,10 +88,11 @@ def adapt_enriched_outputs(articles, events, mappings, *, event_scores=None,
         rel = mdf.merge(adf[["article_id", "relevance"]], on="article_id", how="left").groupby("event_id", as_index=False).relevance.mean()
         edf = edf.merge(rel, on="event_id", how="left", suffixes=("", "_mapped"))
         if "relevance_mapped" in edf:
-            edf["relevance"] = edf["relevance_mapped"].fillna(edf.get("relevance", config.mock_relevance))
+            fallback = config.mock_relevance if config.mock_mode else pd.NA
+            edf["relevance"] = edf["relevance_mapped"].fillna(edf.get("relevance", fallback))
             edf = edf.drop(columns="relevance_mapped")
     elif not edf.empty and "relevance" not in edf:
-        edf["relevance"] = config.mock_relevance
+        edf["relevance"] = config.mock_relevance if config.mock_mode else pd.NA
     if not edf.empty:
         edf["has_mock_scores"] = edf.apply(lambda r: any(r.get(k) == d for k, d in (("importance_score", config.mock_importance), ("source_quality", config.mock_source_quality), ("time_weight", config.mock_time_weight)) if k not in event_scores.get(r.get("event_id"), {})), axis=1)
     return adf, edf, mdf

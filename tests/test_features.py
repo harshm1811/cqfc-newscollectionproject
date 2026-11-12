@@ -1,6 +1,7 @@
 import unittest
 
 import pandas as pd
+from aggregation.rolling import add_rolling_sentiment
 
 from aggregation.adapters.input_adapter import adapt_enriched_outputs
 from aggregation.feature_engine import FeatureConfig, build_feature_dataset
@@ -49,6 +50,23 @@ class FeatureEngineeringTests(unittest.TestCase):
         self.assertEqual(e.iloc[0].event_id, "e")
         self.assertTrue(e.iloc[0].has_mock_scores)
         self.assertEqual(m.iloc[0].event_id, "e")
+
+    def test_adapter_production_mode_preserves_missing_scores(self):
+        from aggregation.adapters.input_adapter import InputAdapterConfig
+        _, events, _ = adapt_enriched_outputs([], [{"event_id": "e", "ticker": "ABC"}], [],
+            config=InputAdapterConfig(mock_mode=False))
+        self.assertTrue(pd.isna(events.iloc[0].importance_score))
+        self.assertTrue(pd.isna(events.iloc[0].source_quality))
+        self.assertTrue(pd.isna(events.iloc[0].time_weight))
+
+    def test_rolling_windows_use_exact_calendar_days_with_gaps(self):
+        daily = pd.DataFrame({"ticker": ["ABC", "ABC", "ABC"],
+            "date": pd.to_datetime(["2026-01-01", "2026-01-03", "2026-01-04"], utc=True),
+            "WeightedSentiment": [1.0, 3.0, 4.0]})
+        out = add_rolling_sentiment(daily, windows=(1, 3), fill_missing_dates=True)
+        day4 = out[out.date == pd.Timestamp("2026-01-04", tz="UTC")].iloc[0]
+        self.assertEqual(day4.Sentiment1D, 4.0)
+        self.assertAlmostEqual(day4.Sentiment3D, (0.0 + 3.0 + 4.0) / 3)
 
 
 if __name__ == "__main__":
