@@ -3,12 +3,16 @@
 import unittest
 from processing.exact_deduplicator import ExactDeduplicator, content_hash, normalized_title
 from processing.semantic_deduplicator import SemanticDeduplicator
+from models.embeddings import EmbeddingModel
 
 
 class TestDeduplication(unittest.TestCase):
     def setUp(self):
         self.exact_dedup = ExactDeduplicator()
-        self.semantic_dedup = SemanticDeduplicator(similarity_threshold=0.60)
+        self.semantic_dedup = SemanticDeduplicator(
+            similarity_threshold=0.60,
+            embedding_model=EmbeddingModel(force_fallback=True),
+        )
 
     def test_content_hash_deterministic(self):
         text1 = "Reliance profit rises 16% in Q2 results."

@@ -277,6 +277,7 @@ def run_equity_intelligence(
     fetch_article_text: bool = False,
     article_text_limit: int = 20,
     min_relevance_threshold: float | None = None,
+    semantic_similarity_threshold: float = 0.65,
 ) -> dict[str, Any]:
     """Run Groups 1→2→3→4 and persist actual outputs through the Group 4 API.
 
@@ -286,6 +287,8 @@ def run_equity_intelligence(
         raise ValueError("A company name or ticker is required")
     if article_text_limit < 0:
         raise ValueError("article_text_limit cannot be negative")
+    if not 0 <= semantic_similarity_threshold <= 1:
+        raise ValueError("semantic_similarity_threshold must be between 0 and 1")
 
     initialize_database(db_path)
     repository = Repository(db_path)
@@ -394,6 +397,7 @@ def run_equity_intelligence(
                 input_path,
                 output_path,
                 min_relevance_threshold=min_relevance_threshold,
+                semantic_similarity_threshold=semantic_similarity_threshold,
             )
         state["group2"] = processed
         state["extraction_status_counts"] = extraction_status_counts
@@ -404,6 +408,8 @@ def run_equity_intelligence(
             except (TypeError, json.JSONDecodeError):
                 configuration = {}
             configuration["extraction_status_counts"] = extraction_status_counts
+            configuration["group2_embedding_backend"] = processed.get("embedding_backend")
+            configuration["semantic_similarity_threshold"] = semantic_similarity_threshold
             repository.update(
                 "COLLECTION_RUNS", "run_id", tracker.run_id,
                 {"configuration_json": json.dumps(configuration, ensure_ascii=False)},
@@ -427,6 +433,7 @@ def run_equity_intelligence(
                 {"model_versions_json": json.dumps({
                     "sentiment": model_name,
                     "fallback_reason": fallback_reason,
+                    "group2_embedding": (state.get("group2") or {}).get("embedding_backend"),
                 }, ensure_ascii=False)},
             )
         return {**payload, "group3": result}
@@ -473,6 +480,7 @@ def run_equity_intelligence(
             "fetch_article_text": fetch_article_text,
             "article_text_limit": article_text_limit,
             "min_relevance_threshold": min_relevance_threshold,
+            "semantic_similarity_threshold": semantic_similarity_threshold,
         },
     )
     run_row = tracker.get(result.run_id)
@@ -493,6 +501,7 @@ def run_equity_intelligence(
         "sentiment_model": getattr(group3_result, "sentiment_model_name", None),
         "sentiment_fallback_reason": getattr(group3_result, "sentiment_fallback_reason", None),
         "extraction_status_counts": state.get("extraction_status_counts", {}),
+        "semantic_embedding_backend": (group2_result or {}).get("embedding_backend"),
         "failed_stages": [
             {"stage": stage.stage, "status": stage.status, "error": stage.error}
             for stage in result.stages if stage.status != "succeeded"
@@ -512,6 +521,7 @@ def main() -> None:
     parser.add_argument("--fetch-article-text", action="store_true")
     parser.add_argument("--article-text-limit", type=int, default=20)
     parser.add_argument("--min-relevance", type=float)
+    parser.add_argument("--semantic-similarity-threshold", type=float, default=0.65)
     args = parser.parse_args()
     result = run_equity_intelligence(
         args.query,
@@ -521,6 +531,7 @@ def main() -> None:
         fetch_article_text=args.fetch_article_text,
         article_text_limit=args.article_text_limit,
         min_relevance_threshold=args.min_relevance,
+        semantic_similarity_threshold=args.semantic_similarity_threshold,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

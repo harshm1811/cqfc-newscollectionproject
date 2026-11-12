@@ -1,10 +1,13 @@
 """Offline integration checks using synthetic records in isolated databases."""
 
 import json
+import group2_pipeline as group2_module
 
 from group3_pipeline import run_group3_pipeline as run_group3
 from models.event_classifier import KeywordRuleClassifier
 from models.sentiment import LexiconSentimentModel
+from models.embeddings import EmbeddingModel
+from processing.semantic_deduplicator import SemanticDeduplicator
 
 from equity_news_engine import integration as integration_module
 from equity_news_engine.repository import Repository
@@ -57,6 +60,16 @@ def test_synthetic_records_flow_through_groups_1_to_4(tmp_path, monkeypatch):
         integration_module, "collect_equity_news", lambda *args, **kwargs: _synthetic_group1_result()
     )
     monkeypatch.setattr(integration_module, "run_group3_pipeline", _mock_group3)
+    real_semantic_deduplicator = group2_module.SemanticDeduplicator
+
+    class OfflineSemanticDeduplicator(real_semantic_deduplicator):
+        def __init__(self, *, similarity_threshold):
+            super().__init__(
+                similarity_threshold=similarity_threshold,
+                embedding_model=EmbeddingModel(force_fallback=True),
+            )
+
+    monkeypatch.setattr(group2_module, "SemanticDeduplicator", OfflineSemanticDeduplicator)
     db_path = tmp_path / "integration.sqlite"
 
     result = integration_module.run_equity_intelligence(
@@ -93,6 +106,7 @@ def test_synthetic_records_flow_through_groups_1_to_4(tmp_path, monkeypatch):
     assert run["article_count"] == 2
     assert run["event_count"] == result["event_count"]
     assert json.loads(run["model_versions_json"])["sentiment"]
+    assert json.loads(run["model_versions_json"])["group2_embedding"] == "fallback"
 
 
 def test_partial_group1_failure_is_retained_in_run_tracking(tmp_path, monkeypatch):
@@ -105,6 +119,16 @@ def test_partial_group1_failure_is_retained_in_run_tracking(tmp_path, monkeypatc
     }
     monkeypatch.setattr(integration_module, "collect_equity_news", lambda *args, **kwargs: group1)
     monkeypatch.setattr(integration_module, "run_group3_pipeline", _mock_group3)
+    real_semantic_deduplicator = group2_module.SemanticDeduplicator
+
+    class OfflineSemanticDeduplicator(real_semantic_deduplicator):
+        def __init__(self, *, similarity_threshold):
+            super().__init__(
+                similarity_threshold=similarity_threshold,
+                embedding_model=EmbeddingModel(force_fallback=True),
+            )
+
+    monkeypatch.setattr(group2_module, "SemanticDeduplicator", OfflineSemanticDeduplicator)
     db_path = tmp_path / "partial.sqlite"
 
     result = integration_module.run_equity_intelligence("Synthetic Test Company", db_path=db_path)

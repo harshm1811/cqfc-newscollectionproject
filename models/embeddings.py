@@ -8,6 +8,8 @@ TF-IDF / character-word n-gram vectorizer fallback for standalone environments.
 from __future__ import annotations
 
 import math
+import hashlib
+from functools import lru_cache
 import re
 from typing import List, Sequence, Union
 import numpy as np
@@ -19,6 +21,12 @@ try:
     _HAS_ST = True
 except Exception:
     _HAS_ST = False
+
+
+@lru_cache(maxsize=2)
+def _load_sentence_transformer(model_name: str):
+    """Reuse one loaded embedding model across pipeline instances in a process."""
+    return SentenceTransformer(model_name)
 
 STOP_WORDS = {
     "a", "an", "the", "in", "on", "at", "to", "for", "of", "and", "or",
@@ -65,7 +73,8 @@ class FallbackTfidfEmbedder:
                 continue
             for tok in tokens:
                 # Deterministic feature hashing
-                h = abs(hash(tok)) % self.dim
+                digest = hashlib.blake2b(tok.encode("utf-8"), digest_size=8).digest()
+                h = int.from_bytes(digest, "big") % self.dim
                 vec[h] += 1.0
             norm = np.linalg.norm(vec)
             if norm > 0:
@@ -88,7 +97,7 @@ class EmbeddingModel:
 
         if _HAS_ST and not force_fallback:
             try:
-                self._st_model = SentenceTransformer(model_name)
+                self._st_model = _load_sentence_transformer(model_name)
                 self.backend = "sentence_transformers"
             except Exception:
                 self._fallback = FallbackTfidfEmbedder()

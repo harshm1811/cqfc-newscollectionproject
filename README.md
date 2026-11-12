@@ -33,7 +33,7 @@ From the dashboard, set the equity and publication window in the sidebar, open *
 
 The default database is `data/equity_news.db`. Set `EQUITY_NEWS_DB` to use another path. The dashboard initializes the schema when it starts and works when the database has no financial records.
 
-The collection command accepts a company name, ticker, or supported alias. Add `--start-date` / `--end-date` to scope collection. Article-page extraction is bounded to 20 URLs; feed title/description processing works without it. Collector errors and unsupported sources are retained in the collection run. To verify the pipeline without network access, run `python run_demo.py` (synthetic demo input; it does not touch the application database).
+The collection command accepts a company name, ticker, or supported alias. Add `--start-date` / `--end-date` to scope collection, `--semantic-similarity-threshold` to tune near-duplicate clustering, and `--fetch-article-text` to attempt bounded page extraction. Collector errors and unsupported sources are retained in the collection run. To verify the pipeline without network access, run `python run_demo.py` (synthetic demo input; it does not touch the application database).
 
 Run tests:
 
@@ -119,7 +119,7 @@ The Group 1 equity resolver, query generator, collectors, and collection pipelin
 
 ## Group 2 article processing
 
-Group 2’s normalization, extraction, cleaning, relevance scoring, and deduplication modules are retained alongside Group 1. Its callable pipeline is `group2_pipeline.run_pipeline(input_path, output_path)`; it accepts Group 1 candidate records in JSON and emits the article contract consumed by Group 3. Keep `final_articles.json` and other demonstration outputs out of the live database; `mock_raw_articles.json` is an explicitly synthetic fixture. See [Group 2 usage notes](docs/group2/README.md).
+Group 2’s normalization, extraction, cleaning, relevance scoring, exact deduplication, and semantic near-duplicate clustering are wired into the production pipeline. The similarity threshold is configurable. SentenceTransformer embeddings are used when available; otherwise a deterministic local TF-IDF/character n-gram fallback runs offline. Its callable pipeline is `group2_pipeline.run_pipeline(input_path, output_path)`. Keep `final_articles.json` and other demonstration outputs out of the live database; `mock_raw_articles.json` is an explicitly synthetic fixture. See [Group 2 usage notes](docs/group2/README.md).
 
 ## Group 3 event intelligence
 

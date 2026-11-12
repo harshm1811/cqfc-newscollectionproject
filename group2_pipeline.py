@@ -10,6 +10,7 @@ from cleaner import clean_article_text
 from deduplicator import deduplicate_articles
 from normalizer import normalize_articles
 from updated_relevance import calculate_relevance_score
+from processing.semantic_deduplicator import SemanticDeduplicator
 
 
 REQUIRED_OUTPUT_FIELDS = (
@@ -46,7 +47,10 @@ def validate_output(articles: List[Dict[str, Any]]) -> None:
         raise ValueError("Final schema validation failed: " + "; ".join(problems))
 
 
-def run_pipeline(input_path, output_path, min_relevance_threshold=None):
+def run_pipeline(input_path, output_path, min_relevance_threshold=None,
+                 semantic_similarity_threshold=0.65):
+    if not isinstance(semantic_similarity_threshold, (int, float)) or not 0 <= semantic_similarity_threshold <= 1:
+        raise ValueError("semantic_similarity_threshold must be between 0 and 1")
     with Path(input_path).open("r", encoding="utf-8") as file:
         data = json.load(file)
 
@@ -88,6 +92,19 @@ def run_pipeline(input_path, output_path, min_relevance_threshold=None):
         scored = [a for a in scored if a["relevance_score"] >= min_relevance_threshold]
 
     result = deduplicate_articles(scored)
+    semantic_deduplicator = SemanticDeduplicator(
+        similarity_threshold=semantic_similarity_threshold
+    )
+    semantic_articles = semantic_deduplicator.cluster_articles(result["articles"])
+    result["articles"] = semantic_articles
+    result["embedding_backend"] = semantic_deduplicator.model.backend
+    result["semantic_similarity_threshold"] = semantic_similarity_threshold
+    cluster_sizes: Dict[str, int] = {}
+    for article in semantic_articles:
+        cluster_id = article.get("duplicate_cluster_id")
+        if cluster_id:
+            cluster_sizes[cluster_id] = cluster_sizes.get(cluster_id, 0) + 1
+    result["semantic_cluster_count"] = sum(size > 1 for size in cluster_sizes.values())
 
     # Guarantee top-level fields for Group 3 compatibility
     for art in result["articles"]:
@@ -99,7 +116,7 @@ def run_pipeline(input_path, output_path, min_relevance_threshold=None):
             art["independent_source"] = True
 
     validate_output(result["articles"])
-    result["pipeline_steps"] = steps
+    result["pipeline_steps"] = [*steps, "semantic_deduplication"]
     with Path(output_path).open("w", encoding="utf-8") as file:
         json.dump(result, file, indent=2, ensure_ascii=False)
         file.write("\n")
@@ -111,8 +128,11 @@ def main():
     parser.add_argument("input", nargs="?", default="mock_raw_articles.json")
     parser.add_argument("output", nargs="?", default="final_articles.json")
     parser.add_argument("--min-relevance", type=float, default=None, help="Optional minimum relevance threshold filter")
+    parser.add_argument("--semantic-similarity-threshold", type=float, default=0.65,
+                        help="Cosine similarity threshold for near-duplicate clustering (0..1)")
     args = parser.parse_args()
-    result = run_pipeline(args.input, args.output, min_relevance_threshold=args.min_relevance)
+    result = run_pipeline(args.input, args.output, min_relevance_threshold=args.min_relevance,
+                          semantic_similarity_threshold=args.semantic_similarity_threshold)
     print(f"Saved {result['record_count']} unique articles from {result['input_record_count']} input records to {args.output}")
 
 

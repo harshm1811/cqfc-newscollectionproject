@@ -136,6 +136,11 @@ def render_app() -> None:
                 query = st.text_input("Company / ticker", value=ticker or "", placeholder="For example: TCS or Infosys")
                 fetch_text = st.checkbox("Attempt article-page extraction", value=True)
                 extraction_limit = st.slider("Maximum pages to fetch", min_value=1, max_value=20, value=5, disabled=not fetch_text)
+                similarity_threshold = st.slider(
+                    "Semantic duplicate similarity threshold", min_value=0.30, max_value=0.95,
+                    value=0.65, step=0.05,
+                    help="Lower values group more similar stories; tune against your review needs.",
+                )
                 search_col, run_col = st.columns(2)
                 searched = search_col.form_submit_button("SEARCH THE REGISTER")
                 submitted = run_col.form_submit_button("GENERATE ANALYSIS")
@@ -148,6 +153,7 @@ def render_app() -> None:
                             run_result = run_equity_intelligence(
                                 query.strip(), start_date=start, end_date=end,
                                 fetch_article_text=fetch_text, article_text_limit=extraction_limit,
+                                semantic_similarity_threshold=similarity_threshold,
                             )
                         st.session_state["last_analysis_result"] = run_result
                         resolved_ticker = run_result.get("ticker")
@@ -171,7 +177,8 @@ def render_app() -> None:
                     f"Run {status}: {latest_run.get('raw_article_count', 0)} candidates, "
                     f"{latest_run.get('processed_article_count', 0)} articles, "
                     f"{latest_run.get('event_count', 0)} events; sentiment model "
-                    f"{latest_run.get('sentiment_model') or 'not available'}."
+                    f"{latest_run.get('sentiment_model') or 'not available'}; semantic embeddings "
+                    f"{latest_run.get('semantic_embedding_backend') or 'not available'}."
                 )
                 if latest_run.get("extraction_status_counts"):
                     st.caption(f"Page extraction outcomes: {latest_run['extraction_status_counts']}")

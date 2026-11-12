@@ -32,6 +32,8 @@ class SemanticDeduplicator:
         similarity_threshold: float = 0.65,
         embedding_model: Optional[EmbeddingModel] = None,
     ):
+        if not 0 <= similarity_threshold <= 1:
+            raise ValueError("similarity_threshold must be between 0 and 1")
         self.similarity_threshold = similarity_threshold
         self.model = embedding_model or EmbeddingModel()
 
@@ -44,6 +46,9 @@ class SemanticDeduplicator:
         Group semantically near-duplicate stories, assign duplicate_cluster_id,
         and evaluate independent_source flags.
         """
+        th = threshold if threshold is not None else self.similarity_threshold
+        if not 0 <= th <= 1:
+            raise ValueError("threshold must be between 0 and 1")
         records = [deepcopy(a) for a in articles]
         n = len(records)
         if n <= 1:
@@ -55,8 +60,6 @@ class SemanticDeduplicator:
                 if "primary_source" not in art:
                     art["primary_source"] = False
             return records
-
-        th = threshold if threshold is not None else self.similarity_threshold
 
         # Texts for semantic embedding: headline + beginning of text
         texts = []
