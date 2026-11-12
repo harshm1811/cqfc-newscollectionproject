@@ -1,4 +1,4 @@
-"""
+﻿"""
 pipeline.py - Integrated End-to-End Pipeline for Group 3.
 
 Flow:
@@ -38,7 +38,10 @@ from events.event_clusterer import ClusteringConfig, EventClusterer
 from events.event_model import Article, ArticleEventMapping, Event
 from models.event_classifier import EventClassifier, KeywordRuleClassifier
 from models.importance import ImportanceConfig
-from models.sentiment import FinBERTSentimentModel, LexiconSentimentModel, SentimentModel, aggregate_event_sentiment, score_articles
+from models.sentiment import (FinBERTSentimentModel, LexiconSentimentModel,
+                              SentimentConfig, SentimentModel,
+                              aggregate_event_sentiment, resolve_sentiment_model,
+                              score_articles)
 from models.source_quality import SourceQualityConfig
 from aggregation.adapters.input_adapter import InputAdapterConfig, adapt_enriched_outputs
 from aggregation.event_scoring import calculate_event_scores
@@ -56,20 +59,17 @@ class Group3PipelineResult:
     daily_features: pd.DataFrame
     articles: List[Article]
     mappings: List[ArticleEventMapping]
+    sentiment_model_name: Optional[str] = None
+    sentiment_fallback_reason: Optional[str] = None
 
     @property
     def events_df(self) -> pd.DataFrame:
         return pd.DataFrame(self.event_records)
 
 
-def default_sentiment_model() -> SentimentModel:
-    """Return FinBERT if transformers/torch is installed, else Lexicon fallback."""
-    try:
-        import transformers  # noqa: F401
-        return FinBERTSentimentModel()
-    except Exception:
-        logger.info("FinBERT dependencies not found; falling back to LexiconSentimentModel.")
-        return LexiconSentimentModel()
+def default_sentiment_model(config: Optional[SentimentConfig] = None) -> SentimentModel:
+    """Return an initialized FinBERT model, or its explicitly configured fallback."""
+    return resolve_sentiment_model(config)[0]
 
 
 def run_group3_pipeline(
@@ -84,6 +84,7 @@ def run_group3_pipeline(
     as_of: Optional[datetime] = None,
     to_snake_case: bool = True,
     importance_factors_by_event: Optional[Dict[str, Dict[str, Any]]] = None,
+    sentiment_config: Optional[SentimentConfig] = None,
 ) -> Group3PipelineResult:
     """
     Execute the full Group 3 pipeline from clean articles to events and quant features.
@@ -108,7 +109,7 @@ def run_group3_pipeline(
         as_of = datetime.now(timezone.utc)
 
     # 1. Normalize articles from Group 2
-    articles = [Article.from_raw(a) if not isinstance(a, Article) else a for a in raw_articles]
+    articles = [Article.from_raw(a) for a in raw_articles]
     if not articles:
         return Group3PipelineResult(
             events=[],
@@ -119,8 +120,44 @@ def run_group3_pipeline(
         )
 
     # 2. Score article sentiment
-    model = sentiment_model or default_sentiment_model()
-    articles = score_articles(articles, model)
+    if sentiment_model is None:
+        model, fallback_reason = resolve_sentiment_model(sentiment_config)
+    elif isinstance(sentiment_model, FinBERTSentimentModel):
+        config = sentiment_config or SentimentConfig.from_env()
+        try:
+            sentiment_model.ensure_loaded()
+            model, fallback_reason = sentiment_model, None
+            logger.warning("Using FinBERT model %s", model.model_name)
+        except Exception as exc:
+            fallback_reason = f"FinBERT initialization failed ({type(exc).__name__}): {exc}"
+            if not config.fallback_enabled:
+                raise RuntimeError(fallback_reason + "; lexicon fallback is disabled") from exc
+            model = LexiconSentimentModel()
+            logger.warning("Using %s because %s", model.name, fallback_reason)
+    else:
+        model, fallback_reason = sentiment_model, None
+        logger.warning("Using explicitly supplied sentiment model %s", model.name)
+    try:
+        articles = score_articles(articles, model)
+    except Exception as exc:
+        if isinstance(model, FinBERTSentimentModel):
+            config = sentiment_config or SentimentConfig.from_env()
+            fallback_reason = f"FinBERT inference failed ({type(exc).__name__}): {exc}"
+            if config.fallback_enabled:
+                model = LexiconSentimentModel()
+                logger.warning("Using %s because %s; rescoring the complete article batch", model.name, fallback_reason)
+                try:
+                    articles = score_articles(articles, model)
+                except Exception as fallback_exc:
+                    raise RuntimeError(
+                        f"Lexicon inference also failed after {fallback_reason}"
+                    ) from fallback_exc
+            else:
+                raise RuntimeError(fallback_reason + "; lexicon fallback is disabled") from exc
+        else:
+            raise RuntimeError(
+                f"Sentiment inference failed using {model.name}; no model switch was attempted"
+            ) from exc
 
     # 3. Cluster articles into events
     evt_clusterer = clusterer or EventClusterer()
@@ -154,6 +191,7 @@ def run_group3_pipeline(
 
     # Preserve exact event scoring values and diagnostics in the downstream record.
     for ev in events:
+        ev.sentiment_model_name = model.name
         if ev.event_id in event_scores:
             score = event_scores[ev.event_id]
             ev.importance_score = score.get("importance_score")
@@ -190,4 +228,6 @@ def run_group3_pipeline(
         daily_features=daily_features,
         articles=articles,
         mappings=mappings,
+        sentiment_model_name=model.name,
+        sentiment_fallback_reason=fallback_reason,
     )

@@ -24,9 +24,10 @@ def event_contributions(events: pd.DataFrame) -> pd.DataFrame:
         out[c] = pd.to_numeric(out[c], errors="coerce").clip(lower=0)
     out["sentiment_score"] = pd.to_numeric(out["sentiment_score"], errors="coerce").clip(-1, 1)
     score_fields = ["relevance", "importance_score", "source_quality", "time_weight"]
-    out["score_missing_reason"] = out[score_fields].isna().apply(
-        lambda row: ",".join(row.index[row].tolist()), axis=1
-    )
+    missing = out[score_fields].isna()
+    out["score_missing_reason"] = [
+        ",".join(missing.columns[row].tolist()) for row in missing.to_numpy()
+    ]
     out["weight"] = out[score_fields].prod(axis=1, min_count=len(score_fields))
     out["weight"] = out["weight"].fillna(0.0)
     out["contribution"] = out["sentiment_score"] * out["weight"]

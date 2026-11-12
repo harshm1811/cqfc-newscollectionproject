@@ -123,3 +123,9 @@ Group 2’s normalization, extraction, cleaning, relevance scoring, and deduplic
 ## Group 3 event intelligence
 
 Group 3’s event clustering, classification, sentiment scoring, source quality, importance, time decay, and daily feature modules are available through `group3_pipeline.run_group3_pipeline(articles)`. It accepts Group 2’s processed `articles` and returns event records plus daily features. The default sentiment model uses the installed FinBERT integration when its optional model stack is available and otherwise falls back to the included lexicon model. See [Group 3 usage notes](docs/group3/README.md). Group 2 and Group 3 mock files are synthetic test/demo inputs and are not application database seeds.
+
+## Sentiment model configuration
+
+Group 3 uses ProsusAI/FinBERT by default. Its `transformers` and `torch` dependencies are included in `requirements.txt`; model weights are downloaded into the local Hugging Face cache on first use and are not committed. If model initialization or inference fails, the pipeline records the fallback reason and uses the lexicon model when fallback is enabled. Set `SENTIMENT_MODEL=lexicon` to select lexicon sentiment explicitly, or set `SENTIMENT_FALLBACK_ENABLED=false` to fail instead of falling back. `SENTIMENT_DEVICE=-1` forces CPU inference. Model and fallback provenance are stored with collection run metadata.
+
+The Group 3 demo reads synthetic examples from `data/mock/` and writes generated output beneath ignored `data/output/`; these are not live financial records. The production `run_intelligence.py` command uses actual configured collectors and persists only returned records.

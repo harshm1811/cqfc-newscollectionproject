@@ -1,4 +1,4 @@
-"""Group 2 text embeddings and Group 3 event intelligence models."""
+﻿"""Models package for text processing and event intelligence."""
 
 from .embeddings import EmbeddingModel, cosine_similarity
 from .event_classifier import (
@@ -11,8 +11,10 @@ from .importance import ImportanceConfig, score_event_importance
 from .sentiment import (
     FinBERTSentimentModel,
     LexiconSentimentModel,
+    SentimentConfig,
     SentimentModel,
     aggregate_event_sentiment,
+    resolve_sentiment_model,
     score_articles,
 )
 from .source_quality import (
@@ -27,8 +29,8 @@ SentimentEngine = FinBERTSentimentModel
 __all__ = [
     "Classification", "CompositeEventClassifier", "EmbeddingModel", "EventClassifier",
     "FinBERTSentimentModel", "ImportanceConfig", "KeywordRuleClassifier",
-    "LexiconSentimentModel", "SentimentEngine", "SentimentModel",
+    "LexiconSentimentModel", "SentimentEngine", "SentimentConfig", "SentimentModel",
     "SourceQualityConfig", "aggregate_event_sentiment", "aggregate_event_source_quality",
-    "categorize_source", "cosine_similarity", "score_article_source_quality",
-    "score_articles", "score_event_importance",
+    "categorize_source", "cosine_similarity", "resolve_sentiment_model",
+    "score_article_source_quality", "score_articles", "score_event_importance",
 ]

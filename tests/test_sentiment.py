@@ -1,5 +1,6 @@
 """Run: python -m pytest tests/  (FinBERT test is skipped unless transformers is installed)."""
 import math
+import pytest
 from events.event_model import Article, SentimentResult
 from models.sentiment import (LexiconSentimentModel, SentimentModel, aggregate_event_sentiment,
                               score_articles)
@@ -31,7 +32,9 @@ def test_probabilities_are_renormalised():
 def test_score_range():
     assert SentimentResult.from_probs(1, 0, 0).sentiment_score == 1
     assert SentimentResult.from_probs(0, 0, 1).sentiment_score == -1
-    assert SentimentResult.from_probs(0, 0, 0).sentiment_score == 0
+    import pytest
+    with pytest.raises(ValueError, match="at least one"):
+        SentimentResult.from_probs(0, 0, 0)
 
 
 def test_lexicon_direction():
@@ -80,8 +83,203 @@ def test_empty_returns_none():
 def test_finbert_real_model_if_available():
     try:
         import transformers  # noqa: F401
-    except ImportError:
-        return  # skipped
+        import torch  # noqa: F401
+    except (ImportError, OSError):
+        pytest.skip("FinBERT inference dependencies are not installed")
     from models.sentiment import FinBERTSentimentModel
-    r = FinBERTSentimentModel().analyze(["Company reports record quarterly profit, beating estimates"])[0]
-    assert r.sentiment_score > 0
+    try:
+        r = FinBERTSentimentModel(local_files_only=True).analyze(
+            ["Company reports record quarterly profit, beating estimates"]
+        )[0]
+    except OSError as exc:
+        pytest.skip(f"ProsusAI/finbert weights are not available in the local cache: {exc}")
+    assert 0 <= r.positive_probability <= 1
+    assert 0 <= r.neutral_probability <= 1
+    assert 0 <= r.negative_probability <= 1
+    assert r.positive_probability + r.neutral_probability + r.negative_probability == pytest.approx(1.0)
+    assert -1 <= r.sentiment_score <= 1
+    assert r.model_name == "ProsusAI/finbert"
+
+
+def test_finbert_batch_output_is_normalized_and_labels_are_mapped():
+    from models.sentiment import FinBERTSentimentModel
+    calls = {}
+    def fake_pipe(texts, **kwargs):
+        calls["texts"] = texts
+        calls.update(kwargs)
+        return [[
+            {"label": "positive", "score": 0.2},
+            {"label": "neutral", "score": 0.8},
+            {"label": "negative", "score": 0.6},
+        ] for _ in texts]
+    model = FinBERTSentimentModel()
+    model._pipe = fake_pipe
+    results = model.analyze(["  up  ", "down"])
+    assert model.model_name == "ProsusAI/finbert"
+    assert calls["texts"] == ["up", "down"]
+    assert calls["batch_size"] == model.batch_size
+    assert calls["truncation"] is True and calls["max_length"] == model.max_length
+    for result in results:
+        assert result.positive_probability == 0.125
+        assert result.neutral_probability == 0.5
+        assert result.negative_probability == pytest.approx(0.375)
+        assert result.sentiment_score == pytest.approx(-0.25)
+        assert result.model_name == "ProsusAI/finbert"
+        assert 0 <= result.positive_probability <= 1
+        assert 0 <= result.neutral_probability <= 1
+        assert 0 <= result.negative_probability <= 1
+        assert result.positive_probability + result.neutral_probability + result.negative_probability == pytest.approx(1.0)
+
+
+def test_finbert_rejects_missing_probability_labels():
+    import pytest
+    from models.sentiment import FinBERTSentimentModel
+    model = FinBERTSentimentModel()
+    model._pipe = lambda texts, **kwargs: [[{"label": "positive", "score": 1.0}]]
+    with pytest.raises(RuntimeError, match="output labels"):
+        model.predict_proba_batch(["sample"])
+
+
+
+
+def test_finbert_initializes_prosus_model_tokenizer_and_pipeline(monkeypatch):
+    import sys
+    import types
+    from models.sentiment import FinBERTSentimentModel
+    calls = []
+    tokenizer = object()
+    model_weights = object()
+    class Loader:
+        @classmethod
+        def from_pretrained(cls, name, **kwargs):
+            calls.append((cls.__name__, name, kwargs))
+            return tokenizer if cls.__name__ == "AutoTokenizer" else model_weights
+    class AutoTokenizer(Loader): pass
+    class AutoModelForSequenceClassification(Loader): pass
+    def fake_pipeline(task, **kwargs):
+        calls.append(("pipeline", task, kwargs))
+        return lambda texts, **kw: [[{"label": "positive", "score": .2}, {"label": "neutral", "score": .3}, {"label": "negative", "score": .5}] for _ in texts]
+    fake = types.ModuleType("transformers")
+    fake.AutoTokenizer = AutoTokenizer
+    fake.AutoModelForSequenceClassification = AutoModelForSequenceClassification
+    fake.pipeline = fake_pipeline
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    sentiment = FinBERTSentimentModel(device=-1)
+    sentiment.ensure_loaded()
+    assert calls[0][1] == calls[1][1] == "ProsusAI/finbert"
+    assert calls[0][0] == "AutoTokenizer"
+    assert calls[1][0] == "AutoModelForSequenceClassification"
+    assert calls[2][2]["tokenizer"] is tokenizer
+    assert calls[2][2]["model"] is model_weights
+    assert calls[2][2]["device"] == -1
+
+
+def test_model_selection_falls_back_only_during_initialization(monkeypatch):
+    import pytest
+    from models.sentiment import FinBERTSentimentModel, LexiconSentimentModel, SentimentConfig, resolve_sentiment_model
+    def fail_load(self):
+        raise OSError("weights unavailable")
+    monkeypatch.setattr(FinBERTSentimentModel, "ensure_loaded", fail_load)
+    model, reason = resolve_sentiment_model(SentimentConfig(fallback_enabled=True))
+    assert isinstance(model, LexiconSentimentModel)
+    assert model.name == "lexicon-fallback"
+    assert "weights unavailable" in reason
+    with pytest.raises(RuntimeError, match="fallback is disabled"):
+        resolve_sentiment_model(SentimentConfig(fallback_enabled=False))
+
+
+def test_sentiment_configuration_reads_environment_and_selects_lexicon(monkeypatch):
+    from models.sentiment import SentimentConfig, resolve_sentiment_model
+    monkeypatch.setenv("SENTIMENT_MODEL", "lexicon")
+    monkeypatch.setenv("SENTIMENT_FALLBACK_ENABLED", "false")
+    monkeypatch.setenv("SENTIMENT_LOCAL_FILES_ONLY", "true")
+    monkeypatch.setenv("SENTIMENT_DEVICE", "cpu")
+    config = SentimentConfig.from_env()
+    assert config.model == "lexicon"
+    assert config.fallback_enabled is False
+    assert config.local_files_only is True
+    assert config.device == -1
+    model, reason = resolve_sentiment_model()
+    assert isinstance(model, LexiconSentimentModel)
+    assert reason is None
+
+
+def test_pipeline_uses_environment_model_selection(monkeypatch):
+    from group3_pipeline import run_group3_pipeline
+    monkeypatch.setenv("SENTIMENT_MODEL", "lexicon")
+    result = run_group3_pipeline([{"article_id": "a", "ticker": "ABC", "title": "Profit rises"}])
+    assert result.sentiment_model_name == "lexicon"
+    assert result.sentiment_fallback_reason is None
+
+
+def test_sentiment_configuration_defaults_to_finbert(monkeypatch):
+    from models.sentiment import SentimentConfig
+    for key in ("SENTIMENT_MODEL", "SENTIMENT_MODEL_NAME", "SENTIMENT_FALLBACK_ENABLED",
+                "SENTIMENT_LOCAL_FILES_ONLY", "SENTIMENT_DEVICE"):
+        monkeypatch.delenv(key, raising=False)
+    config = SentimentConfig.from_env()
+    assert config.model == "finbert"
+    assert config.model_name == "ProsusAI/finbert"
+    assert config.fallback_enabled is True
+
+
+def test_sentiment_inference_failure_does_not_switch_models():
+    import pytest
+    class BrokenModel(SentimentModel):
+        name = "test-model"
+        def predict_proba_batch(self, texts):
+            raise OSError("inference broke")
+    from group3_pipeline import run_group3_pipeline
+    with pytest.raises(RuntimeError, match="no model switch was attempted"):
+        run_group3_pipeline([{"article_id": "a", "ticker": "ABC", "title": "Headline"}], sentiment_model=BrokenModel())
+
+
+def test_pipeline_records_fallback_model_and_reason(monkeypatch):
+    import group3_pipeline as pipeline
+    model = LexiconSentimentModel()
+    monkeypatch.setattr(pipeline, "resolve_sentiment_model", lambda config: (model, "mock initialization failure"))
+    result = pipeline.run_group3_pipeline([{"article_id": "a", "ticker": "ABC", "title": "Headline"}])
+    assert result.sentiment_model_name == "lexicon-fallback"
+    assert result.sentiment_fallback_reason == "mock initialization failure"
+
+
+def test_explicit_finbert_initialization_failure_obeys_fallback_setting(monkeypatch):
+    import pytest
+    from models.sentiment import FinBERTSentimentModel, LexiconSentimentModel, SentimentConfig
+    from group3_pipeline import run_group3_pipeline
+    monkeypatch.setattr(FinBERTSentimentModel, "ensure_loaded", lambda self: (_ for _ in ()).throw(OSError("cache miss")))
+    article = [{"article_id": "a", "ticker": "ABC", "title": "Headline"}]
+    result = run_group3_pipeline(article, sentiment_model=FinBERTSentimentModel())
+    assert result.sentiment_model_name == LexiconSentimentModel.name
+    assert "cache miss" in result.sentiment_fallback_reason
+    with pytest.raises(RuntimeError, match="fallback is disabled"):
+        run_group3_pipeline(article, sentiment_model=FinBERTSentimentModel(),
+                            sentiment_config=SentimentConfig(fallback_enabled=False))
+
+
+def test_finbert_inference_failure_rescores_entire_batch_with_explicit_fallback(monkeypatch):
+    from models.sentiment import FinBERTSentimentModel, LexiconSentimentModel
+    from group3_pipeline import run_group3_pipeline
+    monkeypatch.setattr(FinBERTSentimentModel, "ensure_loaded", lambda self: None)
+    monkeypatch.setattr(FinBERTSentimentModel, "analyze", lambda self, texts: (_ for _ in ()).throw(OSError("inference unavailable")))
+    records = [
+        {"article_id": "a1", "ticker": "ABC", "title": "Profit surges"},
+        {"article_id": "a2", "ticker": "ABC", "title": "Shares fall"},
+    ]
+    result = run_group3_pipeline(records)
+    assert result.sentiment_model_name == LexiconSentimentModel.name
+    assert "FinBERT inference failed" in result.sentiment_fallback_reason
+    assert all(article.sentiment.model_name == "lexicon-fallback" for article in result.articles)
+
+
+def test_finbert_inference_failure_is_raised_when_fallback_disabled(monkeypatch):
+    from models.sentiment import FinBERTSentimentModel, SentimentConfig
+    from group3_pipeline import run_group3_pipeline
+    monkeypatch.setattr(FinBERTSentimentModel, "ensure_loaded", lambda self: None)
+    monkeypatch.setattr(FinBERTSentimentModel, "analyze", lambda self, texts: (_ for _ in ()).throw(OSError("inference unavailable")))
+    with pytest.raises(RuntimeError, match="fallback is disabled"):
+        run_group3_pipeline(
+            [{"article_id": "a", "ticker": "ABC", "title": "Headline"}],
+            sentiment_model=FinBERTSentimentModel(),
+            sentiment_config=SentimentConfig(fallback_enabled=False),
+        )

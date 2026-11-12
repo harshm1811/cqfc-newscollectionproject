@@ -1,4 +1,4 @@
-"""
+﻿"""
 pipeline.py - Master Group 1 Pipeline Orchestration Entrypoint
 
 Responsibilities:

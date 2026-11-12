@@ -370,15 +370,21 @@ def run_equity_intelligence(
     def group3(payload: Mapping[str, Any]) -> dict[str, Any]:
         result = run_group3_pipeline(payload["group2"].get("articles", []))
         state["group3"] = result
-        models = sorted({
-            article.sentiment.model_name
-            for article in result.articles
-            if article.sentiment and article.sentiment.model_name
-        })
+        model_name = result.sentiment_model_name
+        fallback_reason = result.sentiment_fallback_reason
+        if fallback_reason:
+            tracker.integration_failures.append({
+                "stage": "Group 3 sentiment",
+                "model": model_name,
+                "error": fallback_reason,
+            })
         if tracker.run_id:
             repository.update(
                 "COLLECTION_RUNS", "run_id", tracker.run_id,
-                {"model_versions_json": json.dumps({"sentiment": models}, ensure_ascii=False)},
+                {"model_versions_json": json.dumps({
+                    "sentiment": model_name,
+                    "fallback_reason": fallback_reason,
+                }, ensure_ascii=False)},
             )
         return {**payload, "group3": result}
 
@@ -441,6 +447,8 @@ def run_equity_intelligence(
         "event_count": counts.get("events", len(getattr(group3_result, "event_records", []))),
         "daily_feature_value_count": counts.get("features", 0),
         "sentiment_count": counts.get("sentiments", 0),
+        "sentiment_model": getattr(group3_result, "sentiment_model_name", None),
+        "sentiment_fallback_reason": getattr(group3_result, "sentiment_fallback_reason", None),
         "failed_stages": [
             {"stage": stage.stage, "status": stage.status, "error": stage.error}
             for stage in result.stages if stage.status != "succeeded"

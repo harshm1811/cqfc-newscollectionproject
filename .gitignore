@@ -46,3 +46,9 @@ data/raw/*
 !data/raw/samples/*.json
 !data/raw/.gitkeep
 final_articles.json
+
+# Group 3 model outputs and Hugging Face cache
+data/output/
+.cache/huggingface/
+huggingface_cache/
+models--ProsusAI--finbert/
