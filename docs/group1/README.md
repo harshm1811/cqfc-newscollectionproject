@@ -4,7 +4,7 @@ This module resolves equity queries, generates collection queries, and returns c
 
 ## Setup and verification
 
-From the repository root, install dependencies with `pip install -r requirements.txt`. Run Group 1's standalone checks with `python run_tests.py` and all Group 1 plus Group 4 tests with `python -m pytest -q`.
+From the repository root, install dependencies with `pip install -r requirements.txt`. Run Group 1's standalone checks with `python run_tests.py` and the complete Groups 1–4 suite with `python -m pytest -q`.
 
 ## Collection contract
 

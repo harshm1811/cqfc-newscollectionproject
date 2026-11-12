@@ -2,7 +2,7 @@
 
 Repository: cqfc-newscollectionproject
 
-Local implementation of Group 4's database, repository, run tracking, dashboard, reporting, export, and orchestration infrastructure. It contains no seeded financial records. Data displayed and exported comes from records supplied to the repository by an actual integration or by a user.
+Integrated implementation of the equity resolver and news collection, article processing, event/sentiment analysis, SQLite storage, run tracking, dashboard, reporting, and exports. It contains no seeded financial records. The end-to-end command uses configured public collectors and stores only records returned by those collectors; synthetic examples are isolated fixtures.
 
 ## Requirements and setup
 
@@ -22,14 +22,17 @@ $env:PYTHONPATH = "src"
 
 ## Run the application
 
-Initialize the database (safe to repeat), then start Streamlit:
+Initialize the database (safe to repeat), run collection/processing when desired, then start Streamlit:
 
 ```powershell
 python -c "from equity_news_engine.database import initialize_database; initialize_database()"
+python run_intelligence.py Reliance
 python -m streamlit run app.py
 ```
 
 The default database is `data/equity_news.db`. Set `EQUITY_NEWS_DB` to use another path. The dashboard initializes the schema when it starts and works when the database has no financial records.
+
+The collection command accepts a company name, ticker, or supported alias. Add `--start-date` / `--end-date` to scope collection. Article-page extraction is opt-in (`--fetch-article-text`) and bounded to 20 URLs by default; feed title/description processing works without it. Collector errors and unsupported sources are retained in the collection run. To verify the pipeline without network access, run `python run_demo.py` (synthetic demo input; it does not touch the application database).
 
 Run tests:
 
@@ -46,6 +49,9 @@ python -m pytest -q
 - `dashboard.py`: all eight pages, UI filters, charts, tables, and empty/error states.
 - `reporting.py`: structured report, actual-record CSV/JSON export, and chart builders.
 - `pipeline.py`: injectable adapters and sequential orchestration with audited stage failures.
+- `group2_pipeline.py`: Group 1 candidate normalization, cleaning, relevance scoring, and duplicate grouping.
+- `group3_pipeline.py`: article sentiment, event clustering/classification, importance, source quality, time decay, and daily feature generation.
+- `src/equity_news_engine/integration.py`: concrete Group 1 → Group 2 → Group 3 → Group 4 adapters and repository persistence. `run_intelligence.py` is its CLI entry point.
 - `tests/`: database, repository, tracking, pipeline, reporting, exports, and dashboard tests. Tests use temporary databases.
 
 The test fixtures use explicitly synthetic `TEST` records in isolated temporary databases. They are only for verification and are not real financial data or seeded application data. The suite checks individual schema constraints and indexes, empty and populated dashboard states, report content, and CSV/JSON serialization of stored records.
@@ -88,7 +94,7 @@ All pages include appropriate empty states. Empty results do not cause placehold
 
 ## Pipeline and upstream integration
 
-`PipelineOrchestrator` executes the required Group 1 → Group 2 → Group 3 → Group 4 order. `Group1Adapter`, `Group2Adapter`, `Group3Adapter`, and `Group4Adapter` accept real callbacks. Missing callbacks raise `AdapterUnavailable`, stop downstream execution, and are recorded in the run. Earlier successful stages produce `partial_failure`; failure at the first stage is `failed`. Payloads are passed through without invented field conversions. The Group 4 persistence callback must map confirmed upstream records to repository saves.
+`run_intelligence.py` calls the Group 1 resolver/collectors, passes real candidate records through Group 2 and Group 3, then persists normalized articles, source identities, sentiment, event links, events, and daily features through the Group 4 repository. `PipelineOrchestrator` records each stage and `RunTracker` stores collection errors and output counts. Failures after earlier successful stages are recorded as partial failures. Re-running the same article/event updates those records rather than duplicating them.
 
 The provisional minimum interface descriptions supplied for the project are:
 
@@ -96,14 +102,14 @@ The provisional minimum interface descriptions supplied for the project are:
 - Group 2 → Group 3: article ID, ticker, title, clean text, source/source type, published/first-seen timestamps, relevance score, duplicate cluster ID.
 - Group 3 → Group 4: event ID, ticker, type, timestamp, headline, sentiment probabilities/score, importance, article/source counts.
 
-These are integration notes, not finalized contracts. Group 1/2 source identity and Group 3 probability encoding/field names still need agreement. No real upstream code is currently connected. Before connecting it, confirm identifiers, nullability, timestamp formats, score scales, probability representation, and failure semantics with the relevant group. Group 4's schema accepts the minimum listed event concepts but does not infer or calculate upstream results.
+The integration maps Group 1 publisher/provenance and timestamps into Group 2, Group 2 article IDs/text/relevance/deduplication into Group 3, and Group 3 event fields/probabilities/features into the Group 4 schema. Original Group 1 RSS/API payloads remain in the ignored `data/raw/` archive. The Group 4 schema does not store every upstream diagnostic field; see each group guide for retained-field limits. BSE collection remains unsupported until a verified BSE scrip-code mapping is configured. Company IR feeds require explicit per-ticker configuration.
 
 ## Known limitations
 
 - The dashboard and collection pipeline do not perform Git or remote repository operations.
 - Authentication, multi-user access, and deployment configuration are outside this local scope.
 - The database schema is initialized with `CREATE TABLE IF NOT EXISTS`; it does not yet include versioned migrations for future schema changes.
-- Pipeline callbacks and final Group 4 record mapping await confirmed Group 1–3 implementations and finalized contracts.
+- FinBERT is optional and may require external model packages/weights; the included lexicon sentiment model is the offline default fallback.
 - Sentiment results without a linked article or event cannot be scoped by ticker/date in the dashboard.
 
 ## Group 1 collection module
@@ -113,3 +119,7 @@ The Group 1 equity resolver, query generator, collectors, and collection pipelin
 ## Group 2 article processing
 
 Group 2’s normalization, extraction, cleaning, relevance scoring, and deduplication modules are retained alongside Group 1. Its callable pipeline is `group2_pipeline.run_pipeline(input_path, output_path)`; it accepts Group 1 candidate records in JSON and emits the article contract consumed by Group 3. Keep `final_articles.json` and other demonstration outputs out of the live database; `mock_raw_articles.json` is an explicitly synthetic fixture. See [Group 2 usage notes](docs/group2/README.md).
+
+## Group 3 event intelligence
+
+Group 3’s event clustering, classification, sentiment scoring, source quality, importance, time decay, and daily feature modules are available through `group3_pipeline.run_group3_pipeline(articles)`. It accepts Group 2’s processed `articles` and returns event records plus daily features. The default sentiment model uses the installed FinBERT integration when its optional model stack is available and otherwise falls back to the included lexicon model. See [Group 3 usage notes](docs/group3/README.md). Group 2 and Group 3 mock files are synthetic test/demo inputs and are not application database seeds.

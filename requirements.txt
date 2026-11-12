@@ -1,4 +1,4 @@
-# Group 1 collection dependencies
+# Group 1 news collection and resolution
 pydantic>=2.0.0
 pyyaml>=6.0
 requests>=2.31.0
@@ -9,7 +9,8 @@ lxml>=4.9.0
 rapidfuzz>=3.0.0
 python-dateutil>=2.8.2
 
-# Group 4 application dependencies
+# Group 2/3 processing and Group 4 dashboard
+numpy>=1.26
 pandas>=2.2
 plotly>=5.24
 streamlit>=1.40

@@ -144,24 +144,31 @@ def normalize_publisher(source: Optional[str], url: Optional[str] = None) -> str
 
 
 def normalize_source_type(source_type: Optional[str], source: str, primary_source: bool) -> str:
-    """Standardize source_type into canonical categories."""
-    if primary_source:
-        src_upper = str(source).upper()
-        if any(term in src_upper for term in ["NSE", "BSE", "EXCHANGE"]):
-            return "EXCHANGE_FILING"
-        if "SEBI" in src_upper:
-            return "REGULATORY_ANNOUNCEMENT"
-        return "PRESS_RELEASE"
+    """Normalize the supplied type without inferring official status from a name."""
+    if not isinstance(source_type, str) or not source_type.strip():
+        return "UNKNOWN" if primary_source else "NEWS_RSS"
 
-    if not source_type or not isinstance(source_type, str):
-        return "NEWS_RSS"
-
-    st = source_type.strip().upper()
+    st = source_type.strip().upper().replace("-", "_").replace(" ", "_")
     valid = {
-        "NEWS_RSS", "EXCHANGE_FILING", "REGULATORY_ANNOUNCEMENT",
+        "NEWS_RSS", "EXCHANGE_FILING", "REGULATORY", "REGULATORY_ANNOUNCEMENT",
         "COMPANY_IR", "PRESS_RELEASE", "AGGREGATOR", "UNKNOWN"
     }
-    return st if st in valid else "NEWS_RSS"
+    return st if st in valid else "UNKNOWN"
+
+
+def _explicit_boolean(value: Any, default: bool = False) -> bool:
+    """Read an explicit provenance flag without Python's bool('false') trap."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        cleaned = value.strip().casefold()
+        if cleaned in {"true", "1", "yes"}:
+            return True
+        if cleaned in {"false", "0", "no"}:
+            return False
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    return default
 
 
 def normalize_article(article: Dict[str, Any]) -> Dict[str, Any]:
@@ -194,10 +201,9 @@ def normalize_article(article: Dict[str, Any]) -> Dict[str, Any]:
         validation_flags.append("missing_published_at")
 
     # 4. Source & Primary source
-    is_primary = bool(norm.get("primary_source", False))
-    source_name = str(norm.get("source") or "").upper()
-    if any(k in source_name for k in ["BSE", "NSE", "SEBI", "COMPANY_IR"]):
-        is_primary = True
+    # Provenance is supplied by the collector. Publisher names and URLs do not
+    # prove that a record is an official filing or regulatory release.
+    is_primary = _explicit_boolean(norm.get("primary_source"), default=False)
     norm["primary_source"] = is_primary
 
     norm["source"] = normalize_publisher(norm.get("source"), norm.get("url"))
