@@ -23,6 +23,7 @@ flake8>=6.1.0
 # Group 3 FinBERT inference (model weights download at runtime)
 transformers>=4.40
 torch>=2.2
+huggingface_hub>=0.23
 
 # Group 2 semantic article embeddings (model weights download at runtime)
 sentence-transformers>=3.0

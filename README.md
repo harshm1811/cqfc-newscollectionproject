@@ -41,8 +41,8 @@ The system is divided into four largely independent subsystems with standardized
 
 3. **Group 3 — Event Intelligence, Sentiment & Quant Features**
    * **Financial Sentiment**: Local FinBERT (`ProsusAI/finbert`) scoring with an automatic, resilient lexicon fallback. Preserves positive, neutral, and negative probability distributions.
-   * **Event Clustering & Classification**: Groups multi-source reporting into distinct financial events and classifies them into 20 financial event categories (Earnings, M&A, Capex, Buyback, Regulation, etc.).
-   * **Event Importance & Source Quality**: Computes multi-factor importance scores, applies source quality weights, and calculates exponential time decay ($e^{-\lambda \cdot \text{age}}$).
+   * **Event Clustering & Classification**: Groups multi-source reporting into distinct financial events. FinDeBERTa predicts multiple labels from its original taxonomy (`CSR/Brand`, `Deal`, `Dividend`, `Employment`, `Expense`, `Facility`, `FinancialReport`, `Financing`, `Investment`, `Legal`, `Macroeconomics`, `Merger/Acquisition`, `Product/Service`, `Profit/Loss`, `Rating`, `Revenue`, `SalesVolume`, `SecurityValue`) or falls back to `OTHER`.
+   * **Event Importance & Source Quality**: Computes confidence-weighted maximum event materiality plus the existing configured factors, applies source quality weights, and calculates exponential time decay ($e^{-\lambda \cdot \text{age}}$).
    * **Daily Quantitative Features**: Generates point-in-time daily feature datasets suitable for OHLCV financial modeling (rolling sentiment windows 1D/3D/7D/30D, sentiment momentum, volume z-scores, positive/negative shocks, and dispersion).
 
 4. **Group 4 — Database, Reporting, Dashboard & Integration**
@@ -60,7 +60,7 @@ The system is divided into four largely independent subsystems with standardized
 - **Python**: Python 3.10 to 3.13 recommended (Python 3.14 compatible; PyTorch/Transformers require Python $\le$ 3.13 for prebuilt binary wheels).
 - **Database**: SQLite via Python's built-in `sqlite3`.
 - **Core Dependencies**: Streamlit, Pandas, Plotly, PyYAML, BeautifulSoup4, Requests, Python-Dateutil, and Pytest.
-- **Optional NLP Dependencies**: `transformers` and `torch` (for local GPU/CPU FinBERT inference), `sentence-transformers` (for neural embeddings).
+- **NLP Dependencies**: `transformers`, `torch`, and `huggingface_hub` (for local GPU/CPU FinBERT sentiment and FinDeBERTa event inference), `sentence-transformers` (for neural embeddings).
 
 ### Installation
 
@@ -174,6 +174,12 @@ Group 3 uses **ProsusAI/FinBERT** by default for financial sentiment classificat
   python scripts/verify_finbert.py
   ```
 
+## FinDeBERTa Event Classification
+
+Event type classification uses the pretrained `ritessshhh/FinDeBERTa` model independently of FinBERT sentiment. It applies sigmoid to each output logit, uses the model's `thresholds.npy` when available (otherwise 0.5 per label), and retains every label that passes. The deterministic `OTHER` fallback has no model confidence; its event materiality uses the configured `OTHER` weight. Model and tokenizer objects are cached after the first load. The first inference needs Hugging Face access or cached model files.
+
+The 18 original model labels are preserved exactly: `CSR/Brand`, `Deal`, `Dividend`, `Employment`, `Expense`, `Facility`, `FinancialReport`, `Financing`, `Investment`, `Legal`, `Macroeconomics`, `Merger/Acquisition`, `Product/Service`, `Profit/Loss`, `Rating`, `Revenue`, `SalesVolume`, and `SecurityValue`. Importance materiality weights are in `config/importance.yaml`; multi-label event importance uses the maximum confidence multiplied by configured materiality.
+
 ---
 
 ## Shared Interfaces & Data Contracts
@@ -222,7 +228,9 @@ All subsystems communicate via strict, verified data contracts:
 {
   "event_id": "EVT-35205d9afd",
   "ticker": "RELIANCE",
-  "event_type": "EARNINGS",
+  "event_type": "FinancialReport",
+  "event_labels": ["FinancialReport", "Revenue"],
+  "event_type_confidence": 0.93,
   "event_timestamp": "2025-10-20T10:00:00Z",
   "headline": "Reliance Industries Q2 Profit Surges Driven by Retail and Jio Growth",
   "sentiment_score": 0.79,

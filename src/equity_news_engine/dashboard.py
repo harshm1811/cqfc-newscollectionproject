@@ -71,12 +71,22 @@ def _editorial_rows(records: list[dict], *, kind: str) -> None:
         else:
             stamp = row.get("timestamp") or "Date unavailable"
             category = row.get("type") or "Unclassified"
+            labels = row.get("event_labels_json") or []
+            if isinstance(labels, str):
+                try:
+                    labels = json.loads(labels)
+                except json.JSONDecodeError:
+                    labels = []
+            confidence = row.get("event_type_confidence")
+            confidence_text = f"MODEL CONFIDENCE {confidence:.2f}" if isinstance(confidence, (int, float)) else "MODEL CONFIDENCE unavailable"
+            label_text = ", ".join(labels) if labels else category
             title = row.get("headline") or row.get("event_id") or "Untitled event"
             importance = row.get("importance")
             score = f"{importance:.2f}" if isinstance(importance, (float, int)) else "—"
             st.markdown(
                 f'<article class="event-row"><div class="article-meta">{escape(str(stamp))}</div>'
                 f'<div><span class="tag">{escape(str(category))}</span><div class="article-title">{escape(str(title))}</div>'
+                f'<div class="article-meta">EVENT LABELS {escape(str(label_text))} Â· {escape(confidence_text)}</div>'
                 f'<div class="article-meta">{escape(str(row.get("ticker") or "MARKET"))}</div></div>'
                 f'<div class="article-meta">IMPORTANCE<br><b>{score}</b></div></article>',
                 unsafe_allow_html=True,

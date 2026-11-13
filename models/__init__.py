@@ -5,6 +5,7 @@ from .event_classifier import (
     Classification,
     CompositeEventClassifier,
     EventClassifier,
+    FinDeBERTaEventClassifier,
     KeywordRuleClassifier,
 )
 from .importance import ImportanceConfig, score_event_importance
@@ -28,7 +29,7 @@ SentimentEngine = FinBERTSentimentModel
 
 __all__ = [
     "Classification", "CompositeEventClassifier", "EmbeddingModel", "EventClassifier",
-    "FinBERTSentimentModel", "ImportanceConfig", "KeywordRuleClassifier",
+    "FinBERTSentimentModel", "FinDeBERTaEventClassifier", "ImportanceConfig", "KeywordRuleClassifier",
     "LexiconSentimentModel", "SentimentEngine", "SentimentConfig", "SentimentModel",
     "SourceQualityConfig", "aggregate_event_sentiment", "aggregate_event_source_quality",
     "categorize_source", "cosine_similarity", "resolve_sentiment_model",

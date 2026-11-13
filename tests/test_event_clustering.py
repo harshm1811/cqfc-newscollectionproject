@@ -1,6 +1,6 @@
 from events.event_clusterer import ClusteringConfig, EventClusterer, build_enriched_events
 from events.event_model import Article, EventType
-from models.event_classifier import KeywordRuleClassifier
+from models.event_classifier import Classification, EventClassifier
 from models.sentiment import LexiconSentimentModel
 
 
@@ -97,8 +97,12 @@ def test_missing_article_timestamp_is_not_replaced_with_epoch():
 
 
 def test_end_to_end_enrichment():
-    _, events, _ = build_enriched_events(Q2 + [OTHER], LexiconSentimentModel(), KeywordRuleClassifier())
+    class FixedClassifier(EventClassifier):
+        def classify_text(self, text):
+            return Classification(EventType.FINANCIAL_REPORT, 0.9, {"FinancialReport": 0.9}, labels=["FinancialReport"])
+
+    _, events, _ = build_enriched_events(Q2 + [OTHER], LexiconSentimentModel(), FixedClassifier())
     earn = next(e for e in events if e.article_count == 3)
-    assert earn.event_type == EventType.EARNINGS
+    assert earn.event_type == EventType.FINANCIAL_REPORT
     assert earn.sentiment_score is not None and -1 <= earn.sentiment_score <= 1
     assert abs(earn.positive_probability + earn.neutral_probability + earn.negative_probability - 1) < 1e-9

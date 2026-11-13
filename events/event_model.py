@@ -22,25 +22,24 @@ from typing import Any, Dict, List, Optional
 
 
 class EventType(str, Enum):
-    EARNINGS = "EARNINGS"
-    GUIDANCE = "GUIDANCE"
-    MERGER_ACQUISITION = "MERGER_ACQUISITION"
-    DIVIDEND = "DIVIDEND"
-    BUYBACK = "BUYBACK"
-    CAPITAL_RAISE = "CAPITAL_RAISE"
-    DEBT_FINANCING = "DEBT_FINANCING"
-    MANAGEMENT_CHANGE = "MANAGEMENT_CHANGE"
-    PRODUCT_SERVICE = "PRODUCT_SERVICE"
-    EXPANSION = "EXPANSION"
-    CAPEX = "CAPEX"
-    MAJOR_CONTRACT = "MAJOR_CONTRACT"
-    REGULATION = "REGULATION"
-    LITIGATION = "LITIGATION"
-    INVESTIGATION = "INVESTIGATION"
-    FRAUD = "FRAUD"
-    ANALYST_ACTION = "ANALYST_ACTION"
-    SUBSIDIARY_EVENT = "SUBSIDIARY_EVENT"
-    CORPORATE_ACTION = "CORPORATE_ACTION"
+    CSR_BRAND = "CSR/Brand"
+    DEAL = "Deal"
+    DIVIDEND = "Dividend"
+    EMPLOYMENT = "Employment"
+    EXPENSE = "Expense"
+    FACILITY = "Facility"
+    FINANCIAL_REPORT = "FinancialReport"
+    FINANCING = "Financing"
+    INVESTMENT = "Investment"
+    LEGAL = "Legal"
+    MACROECONOMICS = "Macroeconomics"
+    MERGER_ACQUISITION = "Merger/Acquisition"
+    PRODUCT_SERVICE = "Product/Service"
+    PROFIT_LOSS = "Profit/Loss"
+    RATING = "Rating"
+    REVENUE = "Revenue"
+    SALES_VOLUME = "SalesVolume"
+    SECURITY_VALUE = "SecurityValue"
     OTHER = "OTHER"
 
 
@@ -219,6 +218,7 @@ class Event:
     event_type: EventType = EventType.OTHER
     type_confidence: float = 0.0
     type_scores: Dict[str, float] = field(default_factory=dict)
+    event_labels: List[str] = field(default_factory=list)
 
     # Event-level sentiment (probabilities are never discarded)
     positive_probability: Optional[float] = None
@@ -262,6 +262,9 @@ class Event:
             "event_id": self.event_id,
             "ticker": self.ticker,
             "event_type": self.event_type.value if isinstance(self.event_type, EventType) else str(self.event_type),
+            "event_labels": self.event_labels,
+            "event_type_confidence": self.type_confidence,
+            "event_type_scores": self.type_scores,
             "event_timestamp": self.event_timestamp.isoformat() if self.event_timestamp else None,
             "headline": self.headline,
             "sentiment_score": self.sentiment_score,
@@ -289,6 +292,7 @@ class Event:
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["event_type"] = self.event_type.value if isinstance(self.event_type, EventType) else str(self.event_type)
+        d["event_type_confidence"] = self.type_confidence
         d["first_article_at"] = self.first_article_at.isoformat() if self.first_article_at else None
         d["last_article_at"] = self.last_article_at.isoformat() if self.last_article_at else None
         d["event_timestamp"] = d["first_article_at"]
