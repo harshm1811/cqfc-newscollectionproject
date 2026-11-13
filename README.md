@@ -1,17 +1,72 @@
-# Equity News Intelligence & Sentiment Engine — Group 4
+# Equity News Intelligence & Sentiment Engine
 
-Repository: cqfc-newscollectionproject
+An end-to-end, free, and modular equity news intelligence platform. The system ingests public financial news and primary-source regulatory filings, cleans and filters noise, clusters stories into distinct financial events, scores sentiment using financial NLP (FinBERT), calculates point-in-time quantitative features, and presents insights through an interactive Streamlit dashboard, structured intelligence reports, and CSV/JSON datasets.
 
-Integrated implementation of the equity resolver and news collection, article processing, event/sentiment analysis, SQLite storage, run tracking, dashboard, reporting, and exports. It contains no seeded financial records. The end-to-end command uses configured public collectors and stores only records returned by those collectors; synthetic examples are isolated fixtures.
+---
 
-## Requirements and setup
+## Four-Group Project Division & Architecture
 
-- Python 3.13
-- SQLite via Python's built-in `sqlite3`
-- Streamlit, Pandas, Plotly, and Pytest (installed from `requirements.txt`)
+The system is divided into four largely independent subsystems with standardized interfaces:
 
-PowerShell:
+```
+                  GROUP 1: EQUITY RESOLUTION & NEWS COLLECTION
+                      User Query ──► Raw Candidate News Records
+                                      │
+                                      ▼
+             GROUP 2: EXTRACTION, CLEANING, RELEVANCE & DEDUPLICATION
+                     Raw News ──► Clean, Unique, Relevant Articles
+                                      │
+                                      ▼
+               GROUP 3: EVENT INTELLIGENCE, SENTIMENT & QUANT FEATURES
+                     Clean Articles ──► Events + Daily Quant Features
+                                      │
+                                      ▼
+              GROUP 4: DATABASE, REPORTING, DASHBOARD & INTEGRATION
+                  SQLite Storage + Streamlit UI + Reports + Orchestration
+```
 
+### Subsystem Responsibilities
+
+1. **Group 1 — Equity Resolution & News Collection**
+   * **Equity Resolver**: Resolves Indian equities from the local NSE listing and can look up international listed equities using Yahoo Finance's public symbol search. Local NSE lookup supports aliases and typo-tolerant matching; international lookup requires an exact ticker or company-name match.
+   * **Query Generator**: Generates targeted financial search queries across 37+ categories (earnings, M&A, capex, litigation, dividends, etc.).
+   * **Public Collectors**: Discovers news and announcements from Google News RSS, exchange feeds (NSE, BSE with scrip codes), regulatory releases (SEBI), and company IR pages.
+   * **Provenance & Timestamps**: Strictly tags primary sources and captures point-in-time timestamps (`published_at`, `first_seen_at`, `retrieved_at`) without date invention.
+
+2. **Group 2 — Extraction, Cleaning, Relevance & Deduplication**
+   * **Article & Metadata Extraction**: Extracts headline, body text, author, publisher, and timestamps with graceful status tracking (`SUCCESS`, `PARTIAL`, `METADATA_ONLY`, `BLOCKED`, `PAYWALLED`, `FAILED`).
+   * **Cleaning & Normalization**: Strips HTML, navigation text, boilerplate, ads, and duplicate paragraphs. Canonicalizes URLs (stripping tracking parameters), maps publisher aliases, and normalizes timestamps to UTC ISO-8601.
+   * **Relevance Engine**: Evaluates company name frequency, headline mentions, ticker occurrence, subsidiaries, and financial action keywords to compute a configurable equity relevance score $\in [0, 1]$.
+   * **Exact & Semantic Deduplication**: Groups identical stories via URL, title, and content hashing. Clusters near-duplicate and reworded stories using sentence embeddings (`SentenceTransformers` / `all-MiniLM-L6-v2` with a deterministic offline TF-IDF fallback). Tags source independence and primary sources.
+
+3. **Group 3 — Event Intelligence, Sentiment & Quant Features**
+   * **Financial Sentiment**: Local FinBERT (`ProsusAI/finbert`) scoring with an automatic, resilient lexicon fallback. Preserves positive, neutral, and negative probability distributions.
+   * **Event Clustering & Classification**: Groups multi-source reporting into distinct financial events and classifies them into 20 financial event categories (Earnings, M&A, Capex, Buyback, Regulation, etc.).
+   * **Event Importance & Source Quality**: Computes multi-factor importance scores, applies source quality weights, and calculates exponential time decay ($e^{-\lambda \cdot \text{age}}$).
+   * **Daily Quantitative Features**: Generates point-in-time daily feature datasets suitable for OHLCV financial modeling (rolling sentiment windows 1D/3D/7D/30D, sentiment momentum, volume z-scores, positive/negative shocks, and dispersion).
+
+4. **Group 4 — Database, Reporting, Dashboard & Integration**
+   * **SQLite Database**: Production-grade schema (8 relational tables with foreign keys and audit constraints).
+   * **Repository Layer**: Centralized, parameterized data access preventing raw SQL in business modules.
+   * **Run Tracking**: Unique UUID run lifecycle management recording configuration, collector errors, and stage outputs.
+   * **Streamlit Application**: Multi-page interactive analytics portal with 8 dedicated views.
+   * **Report Generator & Exporter**: Generates structured equity intelligence reports and exports CSV/JSON datasets.
+   * **Pipeline Orchestration**: Central orchestrator (`run_intelligence.py`) chaining Groups 1 $\rightarrow$ 2 $\rightarrow$ 3 $\rightarrow$ 4 with audited partial-failure handling.
+
+---
+
+## Requirements and Setup
+
+- **Python**: Python 3.10 to 3.13 recommended (Python 3.14 compatible; PyTorch/Transformers require Python $\le$ 3.13 for prebuilt binary wheels).
+- **Database**: SQLite via Python's built-in `sqlite3`.
+- **Core Dependencies**: Streamlit, Pandas, Plotly, PyYAML, BeautifulSoup4, Requests, Python-Dateutil, and Pytest.
+- **Optional NLP Dependencies**: `transformers` and `torch` (for local GPU/CPU FinBERT inference), `sentence-transformers` (for neural embeddings).
+
+### Installation
+
+Clone the repository and set up a virtual environment:
+
+#### PowerShell (Windows):
 ```powershell
 py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -20,113 +75,227 @@ pip install -r requirements.txt
 $env:PYTHONPATH = "src"
 ```
 
-## Run the application
+#### Bash / macOS / Linux:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+export PYTHONPATH="src"
+```
 
-Initialize the database (safe to repeat), then start Streamlit. The Search page can run the full analysis for a company or ticker; it attempts extraction from up to 20 article pages by default and reports collection/extraction issues.
+---
+
+## Running the Application
+
+### 1. Launch the Streamlit Dashboard
+
+Initialize the SQLite database and launch the interactive web dashboard:
 
 ```powershell
 python -c "from equity_news_engine.database import initialize_database; initialize_database()"
-python -m streamlit run app.py
+streamlit run app.py
 ```
 
-From the dashboard, set the equity and publication window in the sidebar, open **Search**, enter the company/ticker, and choose **GENERATE ANALYSIS**. The app stores the actual collected records and refreshes the selected equity. For CLI use, run `python run_intelligence.py Reliance`; add `--fetch-article-text` to attempt up to 20 page extractions.
+Open `http://localhost:8501` in your browser. The dashboard contains 8 comprehensive views:
+* **Search**: Run the complete real-time intelligence pipeline for any company or ticker, or view past runs.
+* **Overview**: Ticker coverage metrics, independent sources, weighted & rolling sentiment, and recent execution logs.
+* **News Feed**: Filterable table of all discovered articles with relevance scores and provenance links.
+* **Events**: Discovered financial events with event-type distribution, importance timeline, and underlying articles.
+* **Sentiment**: Model breakdown, probability distributions ($P_{pos}, P_{neu}, P_{neg}$), and sentiment dispersion.
+* **Timeline**: Interactive chronology of announcements, filings, and news volume over time.
+* **Sources**: Breakdown of registered publishers, regulatory sources, and primary source ratios.
+* **Export**: Filter and export articles CSV, events CSV, daily features CSV, and full intelligence reports in JSON.
 
-The default database is `data/equity_news.db`. Set `EQUITY_NEWS_DB` to use another path. The dashboard initializes the schema when it starts and works when the database has no financial records.
+---
+
+### International equity coverage
 
 The collection command accepts a company name, ticker, or supported alias. NSE entries resolve locally; other listed equities can be looked up through Yahoo Finance's public symbol search and must match an exact ticker or company name. International news uses localized Google News search and the exchange-qualified Yahoo Finance feed; NSE, BSE and SEBI announcement collectors run only for Indian profiles. Public search and RSS coverage depends on upstream availability and is not guaranteed for every listing. Add `--start-date` / `--end-date` to scope collection, `--semantic-similarity-threshold` to tune near-duplicate clustering, and `--fetch-article-text` to attempt bounded page extraction. Collector errors and unsupported sources are retained in the collection run. To verify the pipeline without network access, run `python run_demo.py` (synthetic demo input; it does not touch the application database).
 
-Run tests:
+### 2. End-to-End Analysis CLI (Group 4 Orchestration)
+
+To run the full integrated pipeline for an equity from the command line:
 
 ```powershell
+python run_intelligence.py Reliance
+```
+
+Optional CLI arguments:
+* `--start-date YYYY-MM-DD`: Earliest publication date to collect.
+* `--end-date YYYY-MM-DD`: Latest publication date to collect.
+* `--fetch-article-text`: Attempt live web extraction for article bodies (up to 20 URLs by default).
+* `--semantic-similarity-threshold 0.65`: Tune near-duplicate clustering threshold.
+* `--database data/equity_news.db`: Custom SQLite database path.
+
+---
+
+### 3. Module CLI Runners & Demos
+
+Each subsystem can be tested independently:
+
+#### Group 1 CLI (Resolution & News Discovery):
+```powershell
+python test_run.py "Tata Motors"
+python test_run.py "INFY"
+```
+
+#### Group 2 CLI (Cleaning, Relevance & Deduplication):
+```powershell
+# Using the production pipeline
+python group2_pipeline.py mock_raw_articles.json final_articles.json
+
+# Or using the root compatibility runner
+python pipeline.py mock_raw_articles.json final_articles.json
+```
+
+#### Group 3 Demo (Offline Event Intelligence & Quant Feature Generation):
+```powershell
+python run_demo.py
+# Ingests mock clean articles, runs sentiment + event clustering + quant features,
+# and outputs events.json and daily_features.csv to data/output/
+```
+
+---
+
+## FinBERT & Sentiment Configuration
+
+Group 3 uses **ProsusAI/FinBERT** by default for financial sentiment classification.
+
+* **Automatic Fallback Policy**: When `transformers` or `torch` are not installed, or when weights cannot be downloaded, the engine automatically falls back to an offline rule-based lexicon model (`lexicon-fallback`) without crashing the pipeline.
+* **Model Provenance**: The active model (`ProsusAI/finbert` or `lexicon-fallback`) and any fallback reason are explicitly recorded on every article, event record, and collection run metadata.
+* **Configuration via Environment Variables**:
+  * `SENTIMENT_MODEL`: Set to `finbert` (default) or `lexicon` to force the lexicon model.
+  * `SENTIMENT_FALLBACK_ENABLED`: Set to `true` (default) or `false` (fails immediately if FinBERT is unavailable).
+  * `SENTIMENT_DEVICE`: Set to `cpu`, `cuda`, or an integer GPU ID (`-1` for CPU, `0` for CUDA:0).
+  * `SENTIMENT_LOCAL_FILES_ONLY`: Set to `true` to disable network downloads and use local cache only.
+* **Strict Verification**:
+  ```powershell
+  python scripts/verify_finbert.py
+  ```
+
+---
+
+## Shared Interfaces & Data Contracts
+
+All subsystems communicate via strict, verified data contracts:
+
+### Group 1 $\rightarrow$ Group 2 (Raw Article Record)
+```json
+{
+  "ticker": "RELIANCE",
+  "company_name": "Reliance Industries Limited",
+  "title": "Reliance Q2 Net Profit Jumps 16%...",
+  "description": "Reliance Industries reported consolidated net profit...",
+  "url": "https://www.bseindia.com/corporates/ann.aspx?id=101",
+  "source": "BSE",
+  "source_type": "EXCHANGE_FILING",
+  "primary_source": true,
+  "published_at": "2025-10-20T10:00:00Z",
+  "first_seen_at": "2025-10-20T10:02:00Z",
+  "retrieved_at": "2025-10-20T10:03:00Z",
+  "collector": "bse_collector"
+}
+```
+
+### Group 2 $\rightarrow$ Group 3 (Clean Article Record)
+```json
+{
+  "article_id": "ARTICLE_783DC42DA7B7",
+  "ticker": "RELIANCE",
+  "company_name": "Reliance Industries Limited",
+  "title": "Reliance Q2 Net Profit Jumps 16%...",
+  "clean_text": "Reliance Q2 Net Profit Jumps 16%...",
+  "source": "BSE",
+  "source_type": "EXCHANGE_FILING",
+  "published_at": "2025-10-20T10:00:00Z",
+  "first_seen_at": "2025-10-20T10:02:00Z",
+  "relevance_score": 1.0,
+  "duplicate_cluster_id": "CLUSTER_A3FA201B8623",
+  "primary_source": true,
+  "independent_source": true
+}
+```
+
+### Group 3 $\rightarrow$ Group 4 (Event Record)
+```json
+{
+  "event_id": "EVT-35205d9afd",
+  "ticker": "RELIANCE",
+  "event_type": "EARNINGS",
+  "event_timestamp": "2025-10-20T10:00:00Z",
+  "headline": "Reliance Industries Q2 Profit Surges Driven by Retail and Jio Growth",
+  "sentiment_score": 0.79,
+  "sentiment_model_name": "ProsusAI/finbert",
+  "positive_probability": 0.84,
+  "neutral_probability": 0.11,
+  "negative_probability": 0.05,
+  "importance_score": 0.80,
+  "article_count": 3,
+  "independent_source_count": 3,
+  "primary_source_present": true
+}
+```
+
+### Group 3 $\rightarrow$ Group 4 (Daily Quant Features)
+A 27-column financial feature dataset including:
+* `date`, `ticker`
+* `news_count`, `relevant_article_count`, `unique_event_count`
+* `positive_event_count`, `negative_event_count`, `neutral_event_count`
+* `weighted_sentiment`, `mean_sentiment`
+* `sentiment_1d`, `sentiment_3d`, `sentiment_7d`, `sentiment_30d`, `sentiment_momentum`
+* `news_volume`, `news_volume_zscore`, `news_volume_shock`
+* `positive_shock`, `negative_shock`
+* `mean_importance`, `max_importance`
+* `source_agreement`, `sentiment_dispersion`
+* `primary_source_event_count`
+
+---
+
+## Testing & Verification
+
+The repository contains isolated unit and integration test suites covering all four groups.
+
+```powershell
+# Set Python path (PowerShell)
+$env:PYTHONPATH = "src"
+
+# Run Group 1 verification suite (Equity Resolver, Queries, RSS/Exchange Collectors)
+python run_tests.py
+
+# Run Group 2 test suite (Extraction, Cleaning, Relevance, Exact/Semantic Deduplication)
+python -m pytest tests/test_extraction.py tests/test_cleaning.py tests/test_relevance.py tests/test_deduplication.py
+
+# Run Group 3 test suite (FinBERT Sentiment, Clustering, Classification, Quant Features)
+python -m pytest tests/test_sentiment.py tests/test_event_*.py tests/test_features.py
+
+# Run repository-wide test suite
 python -m pytest -q
 ```
 
-## Architecture
+---
 
-- `app.py`: Streamlit entry point.
-- `src/equity_news_engine/database/`: SQLite connection context, schema, initialization.
-- `repository.py`: allowlisted CRUD, filters, relationships, and scoped sentiment retrieval. Dashboard and reporting code use this API instead of issuing SQL.
-- `runs.py`: unique run IDs and lifecycle, configuration, collector/model metadata, counts, and failure tracking.
-- `dashboard.py`: all eight pages, UI filters, charts, tables, and empty/error states.
-- `reporting.py`: structured report, actual-record CSV/JSON export, and chart builders.
-- `pipeline.py`: injectable adapters and sequential orchestration with audited stage failures.
-- `group2_pipeline.py`: Group 1 candidate normalization, cleaning, relevance scoring, and duplicate grouping.
-- `group3_pipeline.py`: article sentiment, event clustering/classification, importance, source quality, time decay, and daily feature generation.
-- `src/equity_news_engine/integration.py`: concrete Group 1 → Group 2 → Group 3 → Group 4 adapters and repository persistence. `run_intelligence.py` is its CLI entry point.
-- `tests/`: database, repository, tracking, pipeline, reporting, exports, and dashboard tests. Tests use temporary databases.
+## Database Architecture (SQLite)
 
-The test fixtures use explicitly synthetic `TEST` records in isolated temporary databases. They are only for verification and are not real financial data or seeded application data. The suite checks individual schema constraints and indexes, empty and populated dashboard states, report content, and CSV/JSON serialization of stored records.
+The production database (`data/equity_news.db`) contains 8 relational tables:
 
-## Database tables
+1. `EQUITIES`: Canonical company metadata, ticker, exchange, ISIN, country, and aliases.
+2. `SOURCES`: Registered news and regulatory sources with source type and primary-source status.
+3. `ARTICLES`: Raw and cleaned articles with extraction status, relevance scores, cluster IDs, and timestamps.
+4. `EVENTS`: Financial events with event type, representative headline, sentiment score, importance, and source counts.
+5. `ARTICLE_EVENT_MAP`: Many-to-many join table connecting individual articles to clustered events.
+6. `SENTIMENT_RESULTS`: Detailed sentiment scores and full probability vectors ($P_{pos}, P_{neu}, P_{neg}$) with model versioning.
+7. `DAILY_FEATURES`: Point-in-time daily quantitative sentiment and volume metrics per ticker.
+8. `COLLECTION_RUNS`: End-to-end execution audit logs capturing configuration, collector statuses, and error details.
 
-1. `EQUITIES`: ticker, canonical company name, exchange, and country.
-2. `SOURCES`: source identity, type, and primary-source flag.
-3. `ARTICLES`: upstream article fields, timestamps, cleaning/relevance metadata, primary-source status, independent-source status, and source/equity references.
-4. `EVENTS`: event identity, type, time, headline, sentiment, importance, publisher/independent-source counts, and primary-source confirmation.
-5. `ARTICLE_EVENT_MAP`: many-to-many article/event links.
-6. `SENTIMENT_RESULTS`: model/version, label, score, and probability JSON linked to an article or event.
-7. `DAILY_FEATURES`: dated named numeric features per equity.
-8. `COLLECTION_RUNS`: requested ticker/window, configuration, collectors, model versions, counts, status, and failure details.
+---
 
-Foreign keys are enabled on each connection. Score ranges, nonnegative counts, allowed run statuses, JSON fields, and link requirements have SQLite constraints. Indexes cover ticker/time lookups and common relationships. Timestamps are stored as ISO text; integrations should provide consistently formatted ISO-8601 values.
+## Shared Engineering Rules
 
-## Repository and run tracking
-
-Use `Repository(db_path=None)` from `equity_news_engine.repository`. Public operations include `save`, `get`, `list_records`, `update`, `link_article_event`, `linked_articles`, `linked_events`, and `sentiment_records`. Table/column identifiers are allowlisted; values use parameterized queries. Invalid fields/JSON and SQLite failures raise `RepositoryError`.
-
-`RunTracker.start(...)` creates a UUID run in `running` state. `finish(...)` records counts, end time and failures; a run with failures defaults to `partial_failure`. `fail(...)` preserves a stage and error detail while marking the run failed. Status values are `pending`, `running`, `succeeded`, `partial_failure`, and `failed`.
-
-## Dashboard pages
-
-- **Search**: run the full collection/analysis pipeline or inspect matching stored articles/events.
-- **Overview**: company-scoped coverage counts, independent publishers, weighted and rolling sentiment, daily trends, event polarity, and recent run/failure status.
-- **News Feed**: filtered stored articles.
-- **Events**: stored events with type/importance charts and linked underlying article coverage.
-- **Sentiment**: scoped model outputs with model selection and probability details.
-- **Timeline**: dated article/event points.
-- **Sources**: registered sources and source-type chart.
-- **Export**: filtered article/event/feature tables, CSV and JSON downloads, structured JSON report.
-
-All pages include appropriate empty states. Empty results do not cause placeholder financial content to appear.
-
-## Reporting and export formats
-
-`build_intelligence_report` returns JSON-serializable company scope, coverage, weighted sentiment trends, event breakdown, major positive/negative events, observed event-type themes, risk candidates, source analysis, run failures, and the underlying stored records. `records_for_export` supports `articles`, `events`, and `features`; `export_csv` and `export_json` handle empty and populated datasets. Export selection in the UI applies the active ticker and date filters.
-
-## Pipeline and upstream integration
-
-`run_intelligence.py` calls the Group 1 resolver/collectors, passes real candidate records through Group 2 and Group 3, then persists normalized articles, source identities, sentiment, event links, events, and daily features through the Group 4 repository. `PipelineOrchestrator` records each stage and `RunTracker` stores collection errors and output counts. Failures after earlier successful stages are recorded as partial failures. Re-running the same article/event updates those records rather than duplicating them.
-
-The provisional minimum interface descriptions supplied for the project are:
-
-- Group 1 → Group 2: ticker, company name, title, description, URL, source, source type, primary-source flag, published/first-seen/retrieved timestamps.
-- Group 2 → Group 3: article ID, ticker, title, clean text, source/source type, published/first-seen timestamps, relevance score, duplicate cluster ID.
-- Group 3 → Group 4: event ID, ticker, type, timestamp, headline, sentiment probabilities/score, importance, article/source counts.
-
-The integration maps Group 1 publisher/provenance and timestamps into Group 2, Group 2 article IDs/text/relevance/deduplication into Group 3, and Group 3 event fields/probabilities/features into the Group 4 schema. Original Group 1 RSS/API payloads remain in the ignored `data/raw/` archive. The Group 4 schema does not store every upstream diagnostic field; see each group guide for retained-field limits. BSE collection remains unsupported until a verified BSE scrip-code mapping is configured. Company IR feeds require explicit per-ticker configuration.
-
-## Known limitations
-
-- The dashboard and collection pipeline do not perform Git or remote repository operations.
-- Authentication, multi-user access, and deployment configuration are outside this local scope.
-- The database schema is initialized with `CREATE TABLE IF NOT EXISTS`; it does not yet include versioned migrations for future schema changes.
-- FinBERT is the default sentiment model. The lexicon model is used only when selected explicitly or when FinBERT fails and fallback is enabled; the selected model and fallback reason are retained in run metadata.
-- Sentiment results without a linked article or event cannot be scoped by ticker/date in the dashboard.
-
-## Group 1 collection module
-
-The Group 1 equity resolver, query generator, collectors, and collection pipeline are retained at the repository root. They return raw candidate records with publisher/source identity, primary-source provenance, publication and capture timestamps, collector metadata, and structured collector status/errors. Google News fallback coverage is secondary reporting; BSE collection is explicitly unsupported when a verified six-digit scrip-code mapping is unavailable. Company investor-relations feeds require explicit per-ticker configuration. See [the Group 1 integration and usage notes](docs/group1/README.md). Group 1's standalone verification is `python run_tests.py`; the repository-wide suite is `python -m pytest -q`.
-
-## Group 2 article processing
-
-Group 2’s normalization, extraction, cleaning, relevance scoring, exact deduplication, and semantic near-duplicate clustering are wired into the production pipeline. The similarity threshold is configurable. SentenceTransformer embeddings are used when available; otherwise a deterministic local TF-IDF/character n-gram fallback runs offline. Its callable pipeline is `group2_pipeline.run_pipeline(input_path, output_path)`. Keep `final_articles.json` and other demonstration outputs out of the live database; `mock_raw_articles.json` is an explicitly synthetic fixture. See [Group 2 usage notes](docs/group2/README.md).
-
-## Group 3 event intelligence
-
-Group 3’s event clustering, classification, sentiment scoring, source quality, importance, time decay, and daily feature modules are available through `group3_pipeline.run_group3_pipeline(articles)`. It accepts Group 2’s processed `articles` and returns event records plus daily features. FinBERT is the default model; lexicon fallback is configurable. See [Group 3 usage notes](docs/group3/README.md). Group 2 and Group 3 mock files are synthetic test/demo inputs and are not application database seeds.
-
-## Sentiment model configuration
-
-Group 3 uses ProsusAI/FinBERT by default. Its `transformers` and `torch` dependencies are included in `requirements.txt`; model weights are downloaded into the local Hugging Face cache on first use and are not committed. If model initialization or inference fails, the pipeline records the fallback reason and uses the lexicon model when fallback is enabled. Set `SENTIMENT_MODEL=lexicon` to select lexicon sentiment explicitly, or set `SENTIMENT_FALLBACK_ENABLED=false` to fail instead of falling back. `SENTIMENT_DEVICE=-1` forces CPU inference. Model and fallback provenance are stored with collection run metadata.
-
-The Group 3 demo reads synthetic examples from `data/mock/` and writes generated output beneath ignored `data/output/`; these are not live financial records. The production `run_intelligence.py` command uses actual configured collectors and persists only returned records.
+1. **Zero Paid Dependencies**: The core system runs entirely on free public RSS feeds, public regulatory endpoints, and open-source models.
+2. **Modular Architecture**: Subsystems communicate strictly through defined schemas; internal logic is decoupled.
+3. **Configurable Thresholds**: Relevance thresholds, similarity cutoffs, time-decay rates, and shock limits are parameter-driven.
+4. **Preserve Raw Data**: Original collected records and raw HTML are preserved separately and never overwritten by cleaned data.
+5. **Preserve Timestamps**: Never invent missing timestamps; invalid or missing publication dates remain `None`.
+6. **Graceful Degradation**: Extraction blocks or individual source failures are logged as partial failures and never crash the run.
+7. **No Trading Logic**: The platform produces equity news intelligence and quantitative feature sets; trading strategies remain strictly external.
