@@ -45,7 +45,7 @@ class SentimentModel(ABC):
 class SentimentConfig:
     """Model selection and explicit lexicon-fallback policy."""
     model_name: str = "ProsusAI/finbert"
-    fallback_enabled: bool = True
+    fallback_enabled: bool = False
     local_files_only: bool = False
     batch_size: int = 16
     max_length: int = 512
@@ -62,7 +62,7 @@ class SentimentConfig:
     @classmethod
     def from_env(cls):
         """Read optional SENTIMENT_* settings without requiring dotenv."""
-        fallback = os.getenv("SENTIMENT_FALLBACK_ENABLED", "true").strip().casefold()
+        fallback = os.getenv("SENTIMENT_FALLBACK_ENABLED", "false").strip().casefold()
         if fallback not in {"true", "false", "1", "0", "yes", "no"}:
             raise ValueError("SENTIMENT_FALLBACK_ENABLED must be true or false")
         local_only = os.getenv("SENTIMENT_LOCAL_FILES_ONLY", "false").strip().casefold()

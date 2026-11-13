@@ -220,7 +220,7 @@ def test_sentiment_configuration_defaults_to_finbert(monkeypatch):
     config = SentimentConfig.from_env()
     assert config.model == "finbert"
     assert config.model_name == "ProsusAI/finbert"
-    assert config.fallback_enabled is True
+    assert config.fallback_enabled is False
 
 
 def test_sentiment_inference_failure_does_not_switch_models():
@@ -249,7 +249,8 @@ def test_explicit_finbert_initialization_failure_obeys_fallback_setting(monkeypa
     from group3_pipeline import run_group3_pipeline
     monkeypatch.setattr(FinBERTSentimentModel, "ensure_loaded", lambda self: (_ for _ in ()).throw(OSError("cache miss")))
     article = [{"article_id": "a", "ticker": "ABC", "title": "Headline"}]
-    result = run_group3_pipeline(article, sentiment_model=FinBERTSentimentModel())
+    result = run_group3_pipeline(article, sentiment_model=FinBERTSentimentModel(),
+                                 sentiment_config=SentimentConfig(fallback_enabled=True))
     assert result.sentiment_model_name == LexiconSentimentModel.name
     assert "cache miss" in result.sentiment_fallback_reason
     with pytest.raises(RuntimeError, match="fallback is disabled"):
@@ -266,7 +267,8 @@ def test_finbert_inference_failure_rescores_entire_batch_with_explicit_fallback(
         {"article_id": "a1", "ticker": "ABC", "title": "Profit surges"},
         {"article_id": "a2", "ticker": "ABC", "title": "Shares fall"},
     ]
-    result = run_group3_pipeline(records)
+    from models.sentiment import SentimentConfig
+    result = run_group3_pipeline(records, sentiment_config=SentimentConfig(fallback_enabled=True))
     assert result.sentiment_model_name == LexiconSentimentModel.name
     assert "FinBERT inference failed" in result.sentiment_fallback_reason
     assert all(article.sentiment.model_name == "lexicon-fallback" for article in result.articles)

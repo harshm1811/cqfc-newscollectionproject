@@ -162,11 +162,11 @@ python run_demo.py
 
 Group 3 uses **ProsusAI/FinBERT** by default for financial sentiment classification.
 
-* **Automatic Fallback Policy**: When `transformers` or `torch` are not installed, or when weights cannot be downloaded, the engine automatically falls back to an offline rule-based lexicon model (`lexicon-fallback`) without crashing the pipeline.
-* **Model Provenance**: The active model (`ProsusAI/finbert` or `lexicon-fallback`) and any fallback reason are explicitly recorded on every article, event record, and collection run metadata.
+* **FinBERT-only default**: The pipeline requires FinBERT and fails the sentiment stage if the model cannot initialize or inference fails. It does not silently substitute a lexicon score.
+* **Model Provenance**: The active model (`ProsusAI/finbert`) and any model error are recorded in collection run metadata.
 * **Configuration via Environment Variables**:
   * `SENTIMENT_MODEL`: Set to `finbert` (default) or `lexicon` to force the lexicon model.
-  * `SENTIMENT_FALLBACK_ENABLED`: Set to `true` (default) or `false` (fails immediately if FinBERT is unavailable).
+  * `SENTIMENT_FALLBACK_ENABLED`: Defaults to `false`. Keep it false to require FinBERT and fail clearly if unavailable.
   * `SENTIMENT_DEVICE`: Set to `cpu`, `cuda`, or an integer GPU ID (`-1` for CPU, `0` for CUDA:0).
   * `SENTIMENT_LOCAL_FILES_ONLY`: Set to `true` to disable network downloads and use local cache only.
 * **Strict Verification**:
