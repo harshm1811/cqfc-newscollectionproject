@@ -72,11 +72,20 @@ def score_event_importance(event, *, config=None, additional_factors: Mapping | 
             value = get_value(event, *aliases)
         if name == "event_type" and value is None:
             kind = get_value(event, "event_type", "type")
-            scores = cfg.get("event_type_scores", {})
+            scores = {str(label).casefold(): weight for label, weight in cfg.get("event_type_scores", {}).items()}
             type_scores = get_value(event, "type_scores", default={}) or {}
+            type_scores = {str(label).casefold(): score for label, score in type_scores.items()}
             kind = kind.value if isinstance(kind, Enum) else kind
             normalized = str(kind).strip().casefold() if kind is not None else None
-            value = type_scores.get(normalized) if normalized is not None and isinstance(type_scores, Mapping) else None
+            labels = get_value(event, "event_labels", "labels", default=[]) or []
+            if labels and isinstance(type_scores, Mapping):
+                if [str(label).casefold() for label in labels] == ["other"]:
+                    value = scores.get("other")
+                else:
+                    value = max((float(type_scores.get(str(label).casefold(), 0.0)) *
+                                 float(scores.get(str(label).casefold(), 0.0)) for label in labels), default=None)
+            else:
+                value = type_scores.get(normalized) if normalized is not None and isinstance(type_scores, Mapping) else None
             if value is None:
                 value = scores.get(normalized) if normalized is not None else None
             if kind is not None and value is None:

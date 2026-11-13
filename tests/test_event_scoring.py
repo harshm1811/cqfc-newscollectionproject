@@ -25,7 +25,7 @@ def test_event_scores_include_adapter_values_and_diagnostics():
         "event_id": "e1",
         "ticker": "ABC",
         "first_article_at": "2026-01-01T00:00:00Z",
-        "event_type": "earnings",
+        "event_type": "FinancialReport",
         "primary_source_confirmed": True,
         "financial_magnitude": 0.7,
         "company_specificity": 0.8,
@@ -49,7 +49,7 @@ def test_event_scores_include_adapter_values_and_diagnostics():
 
 def test_event_weight_multiplies_relevance_importance_quality_and_decay():
     event = {
-        "event_id": "weighted", "ticker": "ABC", "event_type": "earnings",
+        "event_id": "weighted", "ticker": "ABC", "event_type": "FinancialReport",
         "first_article_at": "2026-01-02T00:00:00Z", "sentiment_score": 0.5,
         "primary_source_confirmed": False, "financial_magnitude": 0.8,
         "company_specificity": 0.8, "novelty": 0.8,

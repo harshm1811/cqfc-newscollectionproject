@@ -20,6 +20,9 @@ def initialize_database(path: str | Path | None = None) -> None:
                 "independent_source_id": "TEXT",
             },
             "EVENTS": {
+                "event_labels_json": "TEXT CHECK (event_labels_json IS NULL OR json_valid(event_labels_json))",
+                "event_type_confidence": "REAL CHECK (event_type_confidence IS NULL OR event_type_confidence BETWEEN 0 AND 1)",
+                "event_type_scores_json": "TEXT CHECK (event_type_scores_json IS NULL OR json_valid(event_type_scores_json))",
                 "independent_source_count": "INTEGER CHECK (independent_source_count IS NULL OR independent_source_count >= 0)",
                 "primary_source_present": "INTEGER CHECK (primary_source_present IS NULL OR primary_source_present IN (0, 1))",
             },

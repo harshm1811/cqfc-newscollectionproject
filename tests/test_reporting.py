@@ -82,12 +82,12 @@ def test_structured_report_summarizes_sentiment_events_sources_and_run_failures(
         "relevance_score": 0.9,
     })
     repo.save("EVENTS", {
-        "event_id": "test-positive", "ticker": "TEST", "type": "EARNINGS",
+        "event_id": "test-positive", "ticker": "TEST", "type": "FinancialReport",
         "timestamp": "2026-03-04T10:00:00Z", "headline": "Synthetic positive event",
         "sentiment_score": 0.7, "importance": 0.8,
     })
     repo.save("EVENTS", {
-        "event_id": "test-negative", "ticker": "TEST", "type": "LITIGATION",
+        "event_id": "test-negative", "ticker": "TEST", "type": "Legal",
         "timestamp": "2026-03-04T10:00:00Z", "headline": "Synthetic negative event",
         "sentiment_score": -0.6, "importance": 0.9,
     })
@@ -110,7 +110,7 @@ def test_structured_report_summarizes_sentiment_events_sources_and_run_failures(
     }
     assert report["sentiment"]["overall_weighted_sentiment"] == 0.25
     assert report["sentiment"]["latest_24h"] == 0.2
-    assert report["event_breakdown"] == {"EARNINGS": 1, "LITIGATION": 1}
+    assert report["event_breakdown"] == {"FinancialReport": 1, "Legal": 1}
     assert report["major_positive_events"][0]["event_id"] == "test-positive"
     assert report["key_risks"][0]["event_id"] == "test-negative"
     assert report["source_analysis"][0]["source"] == "Synthetic Test Publisher"

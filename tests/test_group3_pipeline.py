@@ -6,7 +6,22 @@ import pandas as pd
 
 from group3_pipeline import run_group3_pipeline, Group3PipelineResult
 from models.sentiment import LexiconSentimentModel
-from models.event_classifier import KeywordRuleClassifier
+from models.event_classifier import Classification, EventClassifier
+from events.event_model import EventType
+
+
+class FixedClassifier(EventClassifier):
+    def classify_text(self, text):
+        normalized = (text or "").casefold()
+        if "dividend" in normalized:
+            label = "Dividend"
+        elif "sebi" in normalized or "regulat" in normalized:
+            label = "Legal"
+        elif any(word in normalized for word in ("profit", "earnings", "results")):
+            label = "FinancialReport"
+        else:
+            return Classification(EventType.OTHER, 0.0, {}, labels=["OTHER"])
+        return Classification(EventType(label), 0.9, {label: 0.9}, labels=[label])
 
 
 def test_full_group3_pipeline_with_group2_mock_data():
@@ -62,7 +77,7 @@ def test_full_group3_pipeline_with_group2_mock_data():
     result = run_group3_pipeline(
         group2_articles,
         sentiment_model=LexiconSentimentModel(),
-        classifier=KeywordRuleClassifier(),
+        classifier=FixedClassifier(),
         as_of=as_of,
         to_snake_case=True,
     )
@@ -79,6 +94,8 @@ def test_full_group3_pipeline_with_group2_mock_data():
         "event_id",
         "ticker",
         "event_type",
+        "event_labels",
+        "event_type_confidence",
         "event_timestamp",
         "headline",
         "sentiment_score",
@@ -105,14 +122,14 @@ def test_full_group3_pipeline_with_group2_mock_data():
 
     # Check earnings event details
     earnings_event = next(e for e in result.events if e.article_count == 2)
-    assert earnings_event.event_type.value == "EARNINGS"
+    assert earnings_event.event_type.value == "FinancialReport"
     assert earnings_event.primary_source_confirmed is True
     assert earnings_event.independent_source_count == 2
     assert earnings_event.importance_score is not None
 
     # Check regulatory event details
     reg_event = next(e for e in result.events if e.article_count == 1)
-    assert reg_event.event_type.value in ("REGULATION", "INVESTIGATION")
+    assert reg_event.event_type.value == "Legal"
 
     # Check Daily Equity Feature Dataset schema adherence
     daily_df = result.daily_features
@@ -169,10 +186,11 @@ def test_pipeline_with_pascal_case_and_custom_importance():
     result = run_group3_pipeline(
         articles,
         sentiment_model=LexiconSentimentModel(),
+        classifier=FixedClassifier(),
         to_snake_case=False,
     )
     assert len(result.events) == 1
-    assert result.events[0].event_type.value == "DIVIDEND"
+    assert result.events[0].event_type.value == "Dividend"
     # PascalCase column verification
     assert "NewsCount" in result.daily_features.columns
     assert "WeightedSentiment" in result.daily_features.columns

@@ -2,6 +2,7 @@
 import math
 import pytest
 from events.event_model import Article, SentimentResult
+from events.event_model import EventType
 from models.sentiment import (LexiconSentimentModel, SentimentModel, aggregate_event_sentiment,
                               score_articles)
 
@@ -16,6 +17,21 @@ class Fixed(SentimentModel):
     name = "fixed"
     def __init__(self, table): self.table = table
     def predict_proba_batch(self, texts): return [self.table[t] for t in texts]
+
+
+class FixedEventClassifier:
+    def classify_event(self, event, _articles):
+        event.event_type = EventType.OTHER
+        event.type_confidence = 0.0
+        event.type_scores = {}
+        event.event_labels = ["OTHER"]
+        return event
+
+
+@pytest.fixture(autouse=True)
+def avoid_loading_event_model_in_sentiment_tests(monkeypatch):
+    import group3_pipeline
+    monkeypatch.setattr(group3_pipeline, "FinDeBERTaEventClassifier", FixedEventClassifier)
 
 
 def test_score_is_pos_minus_neg_and_probs_kept():

@@ -1,78 +1,82 @@
+import math
+
 import pytest
-from events.event_model import Article, EventType, Event
-from models.event_classifier import (CompositeEventClassifier, EventClassifier, Classification,
-                                     KeywordRuleClassifier)
 
-C = KeywordRuleClassifier()
-
-
-@pytest.mark.parametrize("text,expected", [
-    ("Reliance Q2 results: net profit rises 12% to Rs 18,000 crore", EventType.EARNINGS),
-    ("TCS raises FY26 revenue guidance on strong deal pipeline", EventType.GUIDANCE),
-    ("Tata Motors to acquire 51% stake in rival EV maker", EventType.MERGER_ACQUISITION),
-    ("Infosys declares interim dividend of Rs 21 per share", EventType.DIVIDEND),
-    ("Infosys board approves share buyback of Rs 9,000 crore", EventType.BUYBACK),
-    ("Company launches QIP to raise Rs 5,000 crore", EventType.CAPITAL_RAISE),
-    ("Adani Ports issues NCDs worth Rs 1,000 crore", EventType.DEBT_FINANCING),
-    ("Wipro CEO resigns, board appoints interim chief executive", EventType.MANAGEMENT_CHANGE),
-    ("Maruti launches new compact SUV model", EventType.PRODUCT_SERVICE),
-    ("Dmart expands with 50 new stores across south India", EventType.EXPANSION),
-    ("L&T announces capex of Rs 3,000 crore for new capacity", EventType.CAPEX),
-    ("L&T bags mega order worth Rs 7,000 crore from state government", EventType.MAJOR_CONTRACT),
-    ("SEBI approves new norms for listed entities", EventType.REGULATION),
-    ("Supreme Court dismisses petition against company in tax litigation", EventType.LITIGATION),
-    ("CBI raids offices of promoter in bank loan probe", EventType.INVESTIGATION),
-    ("Short-seller report alleges accounting irregularities and fraud", EventType.FRAUD),
-    ("Jefferies upgrades stock to buy, raises price target to Rs 3,200", EventType.ANALYST_ACTION),
-    ("Company incorporates wholly-owned subsidiary in Singapore", EventType.SUBSIDIARY_EVENT),
-    ("Board approves 1:1 bonus issue and stock split", EventType.CORPORATE_ACTION),
-    ("Sensex ends flat as markets await cues", EventType.OTHER),
-])
-def test_classification(text, expected):
-    assert C.classify_text(text).event_type == expected
+from events.event_model import Article, Event, EventType
+from models import event_classifier
+from models.event_classifier import EventClassifier, FinDeBERTaEventClassifier, Classification
 
 
-def test_all_types_covered_by_enum():
-    required = {"EARNINGS", "GUIDANCE", "MERGER_ACQUISITION", "DIVIDEND", "BUYBACK", "CAPITAL_RAISE",
-                "DEBT_FINANCING", "MANAGEMENT_CHANGE", "PRODUCT_SERVICE", "EXPANSION", "CAPEX",
-                "MAJOR_CONTRACT", "REGULATION", "LITIGATION", "INVESTIGATION", "FRAUD",
-                "ANALYST_ACTION", "SUBSIDIARY_EVENT", "CORPORATE_ACTION", "OTHER"}
-    assert required == {e.value for e in EventType}
+LABELS = [
+    "CSR/Brand", "Deal", "Dividend", "Employment", "Expense", "Facility",
+    "FinancialReport", "Financing", "Investment", "Legal", "Macroeconomics",
+    "Merger/Acquisition", "Product/Service", "Profit/Loss", "Rating", "Revenue",
+    "SalesVolume", "SecurityValue",
+]
 
 
-def test_confidence_bounds_and_other_has_zero():
-    r = C.classify_text("Infosys declares interim dividend")
-    assert 0 < r.confidence <= 1
-    assert C.classify_text("hello world").confidence == 0.0
+def fake_model(monkeypatch, logits, thresholds):
+    torch = pytest.importorskip("torch")
+
+    class Tokenizer:
+        def __call__(self, *_args, **kwargs):
+            assert kwargs["truncation"] is True and kwargs["max_length"] == 128
+            return {"input_ids": torch.tensor([[1]])}
+
+    class Model:
+        config = type("Config", (), {"id2label": dict(enumerate(LABELS))})()
+
+        def __call__(self, **_kwargs):
+            return type("Output", (), {"logits": torch.tensor([logits], dtype=torch.float32)})()
+
+    monkeypatch.setattr(event_classifier, "_load_model", lambda *_args: (Tokenizer(), Model(), torch.device("cpu"), thresholds))
 
 
-def _a(title, url):
-    return Article.from_raw({"ticker": "X", "title": title, "url": url, "source": url})
+def test_canonical_labels_are_exactly_supported_model_labels():
+    assert [label for label in event_classifier.EVENT_LABELS] == LABELS
+    assert EventType.OTHER.value == "OTHER"
 
 
-def test_event_level_vote_majority_wins():
-    arts = [_a("Q2 results: net profit rises", "1"), _a("Q2 earnings beat estimates", "2"),
-            _a("Stock jumps after results", "3")]
-    ev = Event(event_id="E", ticker="X", title="t")
-    C.classify_event(ev, arts)
-    assert ev.event_type == EventType.EARNINGS and ev.type_confidence > 0.5
+def test_multilabel_sigmoid_thresholds_and_order(monkeypatch):
+    logits = [-5.0] * len(LABELS)
+    thresholds = [0.99] * len(LABELS)
+    logits[1], logits[2] = 2.0, 1.0
+    thresholds[1], thresholds[2] = 0.8, 0.7
+    fake_model(monkeypatch, logits, thresholds)
+
+    result = FinDeBERTaEventClassifier().classify_text("Financial headline")
+
+    assert result.event_type is EventType.DEAL
+    assert result.labels == ["Deal", "Dividend"]
+    assert result.scores["Deal"] == pytest.approx(1 / (1 + math.exp(-2)))
+    assert result.scores["Dividend"] == pytest.approx(1 / (1 + math.exp(-1)))
 
 
-def test_classifier_is_replaceable():
-    class AlwaysFraud(EventClassifier):
-        def classify_text(self, text): return Classification(EventType.FRAUD, 0.9)
-    ev = Event(event_id="E", ticker="X", title="t")
-    AlwaysFraud().classify_event(ev, [_a("anything", "1")])
-    assert ev.event_type == EventType.FRAUD
+def test_other_has_no_fabricated_model_probability(monkeypatch):
+    fake_model(monkeypatch, [-4.0] * len(LABELS), [0.6] * len(LABELS))
+    result = FinDeBERTaEventClassifier().classify_text("Unrelated text")
+    assert result.event_type is EventType.OTHER
+    assert result.confidence == 0.0
+    assert result.scores == {}
+    assert result.labels == ["OTHER"]
 
 
-def test_composite_falls_back_to_next():
-    class Weak(EventClassifier):
-        def classify_text(self, text): return Classification(EventType.OTHER, 0.0)
-    comp = CompositeEventClassifier([Weak(), C], threshold=0.3)
-    assert comp.classify_text("Infosys declares interim dividend").event_type == EventType.DIVIDEND
+def test_event_record_keeps_labels_and_event_confidence():
+    event = Event("e1", "ABC", "Headline", event_type=EventType.DEAL,
+                  type_confidence=0.91, type_scores={"Deal": 0.91}, event_labels=["Deal", "Revenue"])
+    row = event.to_group4_record()
+    assert row["event_type"] == "Deal"
+    assert row["event_labels"] == ["Deal", "Revenue"]
+    assert row["event_type_confidence"] == 0.91
 
 
-def test_custom_rules_configurable():
-    k = KeywordRuleClassifier(rules={EventType.DIVIDEND: [(r"\bpayday\b", 5)]})
-    assert k.classify_text("Big payday for holders").event_type == EventType.DIVIDEND
+def test_classifier_interface_accepts_custom_classifier():
+    class FixedClassifier(EventClassifier):
+        def classify_text(self, text):
+            return Classification(EventType.DEAL, 0.9, {"Deal": 0.9}, labels=["Deal"])
+
+    article = Article.from_raw({"article_id": "a1", "ticker": "ABC", "title": "A deal"})
+    event = Event("e1", "ABC", "A deal")
+    FixedClassifier().classify_event(event, [article])
+    assert event.event_type is EventType.DEAL
+    assert event.event_labels == ["Deal"]

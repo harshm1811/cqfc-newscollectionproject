@@ -12,25 +12,24 @@ factor_weights:
 # Provisional explicit category defaults for categories without prior weights;
 # all values remain configurable and should be calibrated on labeled outcomes.
 event_type_scores:
-  earnings: 0.80
-  guidance: 0.75
-  merger_acquisition: 1.00
-  dividend: 0.65
-  buyback: 0.75
-  capital_raise: 0.80
-  debt_financing: 0.70
-  management_change: 0.65
-  product_service: 0.60
-  expansion: 0.65
-  capex: 0.70
-  major_contract: 0.80
-  regulation: 0.90
-  litigation: 0.80
-  investigation: 0.90
-  fraud: 1.00
-  analyst_action: 0.60
-  subsidiary_event: 0.60
-  corporate_action: 0.65
-  other: 0.50
+  "CSR/Brand": 0.45
+  Deal: 0.75
+  Dividend: 0.65
+  Employment: 0.55
+  Expense: 0.55
+  Facility: 0.50
+  FinancialReport: 0.85
+  Financing: 0.75
+  Investment: 0.65
+  Legal: 0.80
+  Macroeconomics: 0.75
+  "Merger/Acquisition": 1.00
+  "Product/Service": 0.65
+  "Profit/Loss": 0.90
+  Rating: 0.60
+  Revenue: 0.85
+  SalesVolume: 0.60
+  SecurityValue: 0.70
+  OTHER: 0.40
 
 independent_source_count_saturation: 5

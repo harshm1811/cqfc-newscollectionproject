@@ -11,7 +11,7 @@ Flow:
   2. Event Clustering (TF-IDF / Embeddings)
       │
       ▼
-  3. Event Classification (20 financial event categories)
+  3. Event Classification (FinDeBERTa multi-label event categories)
       │
       ▼
   4. Importance, Source Quality & Time Decay Scoring
@@ -36,7 +36,7 @@ import pandas as pd
 
 from events.event_clusterer import ClusteringConfig, EventClusterer
 from events.event_model import Article, ArticleEventMapping, Event
-from models.event_classifier import EventClassifier, KeywordRuleClassifier
+from models.event_classifier import EventClassifier, FinDeBERTaEventClassifier
 from models.importance import ImportanceConfig
 from models.sentiment import (FinBERTSentimentModel, LexiconSentimentModel,
                               SentimentConfig, SentimentModel,
@@ -92,7 +92,7 @@ def run_group3_pipeline(
     Parameters:
         raw_articles: Clean article records (dicts, objects, or Article instances from Group 2).
         sentiment_model: NLP model for financial sentiment (defaults to FinBERT / Lexicon).
-        classifier: Classifier for the 20 event categories (defaults to KeywordRuleClassifier).
+        classifier: Event classifier (defaults to FinDeBERTa multi-label inference).
         clusterer: Clustering algorithm (defaults to EventClusterer).
         importance_config: Importance factor weights and thresholds.
         source_quality_config: Source categorization and weights.
@@ -164,7 +164,7 @@ def run_group3_pipeline(
     events, mappings = evt_clusterer.cluster(articles)
 
     # 4. Classify events and aggregate event-level sentiment
-    evt_classifier = classifier or KeywordRuleClassifier()
+    evt_classifier = classifier or FinDeBERTaEventClassifier()
     by_id = {a.article_id: a for a in articles}
     for ev in events:
         arts = [by_id[i] for i in ev.article_ids if i in by_id]
