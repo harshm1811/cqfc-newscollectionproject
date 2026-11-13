@@ -356,7 +356,10 @@ class EquityResolver:
         # 1. Check Cache
         cached = self._get_from_cache(clean_q)
         if cached:
-            return cached
+            cached_keys = {normalize_text(cached.ticker), normalize_text(cached.company_name)}
+            cached_keys.update(normalize_text(alias) for alias in cached.aliases)
+            if clean_q in cached_keys:
+                return cached
 
         # 2. Exact Ticker Match (case-insensitive)
         # Note: If the query is an exact ticker symbol, return it
@@ -395,6 +398,11 @@ class EquityResolver:
         global_profile = self._resolve_global_listing(query, clean_q)
         if global_profile:
             return global_profile
+
+        # A legacy fuzzy cache entry may have captured a foreign ticker as a
+        # similar Indian symbol. Keep typo support, but only after live lookup.
+        if cached:
+            return cached
 
         # 5. Fuzzy & Typo Matching across all listed companies
         scored_candidates: List[Tuple[float, str]] = []
@@ -459,11 +467,19 @@ class EquityResolver:
             return None
 
         _, match, name = sorted(candidates, key=lambda row: row[0])[0]
+        exchange = str(match["exchange"]).upper()
+        exchange_country = {
+            "NMS": "United States", "NGM": "United States", "NCM": "United States",
+            "NYQ": "United States", "ASE": "United States", "PCX": "United States",
+            "LSE": "United Kingdom", "TOR": "Canada", "ASX": "Australia",
+            "HKG": "Hong Kong", "TYO": "Japan", "GER": "Germany", "FRA": "Germany",
+            "PAR": "France", "SWX": "Switzerland", "SGX": "Singapore",
+        }
         profile = EquityProfile(
             company_name=name,
             ticker=str(match["symbol"]).upper(),
-            exchange=str(match["exchange"]).upper(),
-            country=str(match.get("country") or "International"),
+            exchange=exchange,
+            country=str(match.get("country") or exchange_country.get(exchange) or "International"),
             aliases=[str(match["symbol"]).upper(), name],
         )
         self._save_to_cache(clean_query, profile)
