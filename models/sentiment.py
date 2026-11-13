@@ -109,7 +109,19 @@ class FinBERTSentimentModel(SentimentModel):
     def _load(self):
         if self._pipe is not None:
             return
+        # Streamlit may run as a hidden Windows process without a valid console
+        # handle. Hugging Face's tqdm weight-loading progress can then raise
+        # OSError(22) before the model is ready, so disable terminal progress.
+        os.environ.setdefault("TQDM_DISABLE", "1")
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
         from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
+        from transformers.utils import logging as transformers_logging
+        transformers_logging.disable_progress_bar()
+        try:
+            from huggingface_hub.utils import disable_progress_bars
+            disable_progress_bars()
+        except ImportError:
+            pass
         tok = AutoTokenizer.from_pretrained(self.model_name, local_files_only=self.local_files_only)
         mdl = AutoModelForSequenceClassification.from_pretrained(
             self.model_name, local_files_only=self.local_files_only)
