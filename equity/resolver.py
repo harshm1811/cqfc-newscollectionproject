@@ -25,9 +25,11 @@ import json
 import sqlite3
 import difflib
 import re
+import urllib.parse
 from pathlib import Path
 
 from .profile import EquityProfile
+from utils.http_client import create_http_session
 
 try:
     from rapidfuzz import fuzz
@@ -129,6 +131,7 @@ class EquityResolver:
 
         self._load_seed_data()
         self._init_cache()
+        self.session = create_http_session()
 
     def _load_seed_data(self) -> None:
         """Loads all NSE equities and curated alias seeds."""
@@ -387,6 +390,12 @@ class EquityResolver:
             self._save_to_cache(clean_q, profile)
             return profile
 
+        # Try an exact verified international listing before fuzzy matching,
+        # so a foreign symbol cannot be captured by a similar NSE ticker.
+        global_profile = self._resolve_global_listing(query, clean_q)
+        if global_profile:
+            return global_profile
+
         # 5. Fuzzy & Typo Matching across all listed companies
         scored_candidates: List[Tuple[float, str]] = []
 
@@ -412,4 +421,50 @@ class EquityResolver:
 
         profile = self._build_profile_from_symbol(best_symbol)
         self._save_to_cache(clean_q, profile)
+        return profile
+
+    def _resolve_global_listing(self, query: str, clean_query: str) -> Optional[EquityProfile]:
+        try:
+            url = "https://query1.finance.yahoo.com/v1/finance/search?" + urllib.parse.urlencode({
+                "q": query.strip(), "quotesCount": 10, "newsCount": 0,
+            })
+            response = self.session.get(url, timeout=8)
+            response.raise_for_status()
+            quotes = response.json().get("quotes", [])
+        except Exception:
+            return None
+
+        query_key = normalize_text(query)
+        def company_key(value: str) -> str:
+            normalized = normalize_text(value)
+            for suffix in (" incorporated", " inc", " corporation", " corp", " plc", " limited", " ltd"):
+                if normalized.endswith(suffix):
+                    normalized = normalized[:-len(suffix)].strip()
+            return normalized
+        candidates = []
+        for item in quotes:
+            if item.get("quoteType") != "EQUITY" or not item.get("symbol") or not item.get("exchange"):
+                continue
+            symbol = str(item["symbol"]).upper()
+            name = str(item.get("longname") or item.get("shortname") or "").strip()
+            if not name:
+                continue
+            name_match = company_key(name) == company_key(query)
+            symbol_match = normalize_text(symbol) == query_key
+            # Prevent fuzzy Yahoo results from resolving an unrelated company.
+            if not (name_match or symbol_match):
+                continue
+            candidates.append((0 if symbol_match else 1, item, name))
+        if not candidates:
+            return None
+
+        _, match, name = sorted(candidates, key=lambda row: row[0])[0]
+        profile = EquityProfile(
+            company_name=name,
+            ticker=str(match["symbol"]).upper(),
+            exchange=str(match["exchange"]).upper(),
+            country=str(match.get("country") or "International"),
+            aliases=[str(match["symbol"]).upper(), name],
+        )
+        self._save_to_cache(clean_query, profile)
         return profile

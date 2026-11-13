@@ -33,7 +33,7 @@ From the dashboard, set the equity and publication window in the sidebar, open *
 
 The default database is `data/equity_news.db`. Set `EQUITY_NEWS_DB` to use another path. The dashboard initializes the schema when it starts and works when the database has no financial records.
 
-The collection command accepts a company name, ticker, or supported alias. Add `--start-date` / `--end-date` to scope collection, `--semantic-similarity-threshold` to tune near-duplicate clustering, and `--fetch-article-text` to attempt bounded page extraction. Collector errors and unsupported sources are retained in the collection run. To verify the pipeline without network access, run `python run_demo.py` (synthetic demo input; it does not touch the application database).
+The collection command accepts a company name, ticker, or supported alias. NSE entries resolve locally; other listed equities can be looked up through Yahoo Finance's public symbol search and must match an exact ticker or company name. International news uses localized Google News search and the exchange-qualified Yahoo Finance feed; NSE, BSE and SEBI announcement collectors run only for Indian profiles. Public search and RSS coverage depends on upstream availability and is not guaranteed for every listing. Add `--start-date` / `--end-date` to scope collection, `--semantic-similarity-threshold` to tune near-duplicate clustering, and `--fetch-article-text` to attempt bounded page extraction. Collector errors and unsupported sources are retained in the collection run. To verify the pipeline without network access, run `python run_demo.py` (synthetic demo input; it does not touch the application database).
 
 Run tests:
 

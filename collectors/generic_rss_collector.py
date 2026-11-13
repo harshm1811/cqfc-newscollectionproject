@@ -13,6 +13,7 @@ Responsibilities:
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import xml.etree.ElementTree as ET
+import urllib.parse
 
 from .base_collector import BaseCollector, RawArticleRecord
 from equity.profile import EquityProfile
@@ -69,11 +70,19 @@ class GenericRSSCollector(BaseCollector):
         records: List[RawArticleRecord] = []
         seen_urls = set()
 
-        # Combine static feeds + dynamic Yahoo Finance ticker feed
-        all_feeds = list(self.feeds)
+        # Indian publishers are useful for Indian listings. For international
+        # profiles use the exact exchange-qualified symbol returned by lookup.
+        if profile.country.lower() == "india":
+            all_feeds = list(self.feeds)
+            yahoo_region, yahoo_language, yahoo_symbol = "IN", "en-IN", f"{profile.ticker}.NS"
+        else:
+            all_feeds = []
+            yahoo_region, yahoo_language, yahoo_symbol = "US", "en-US", profile.ticker
         all_feeds.append({
             "name": f"Yahoo Finance ({profile.ticker})",
-            "url": f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={profile.ticker}.NS&region=IN&lang=en-IN"
+            "url": "https://feeds.finance.yahoo.com/rss/2.0/headline?" + urllib.parse.urlencode({
+                "s": yahoo_symbol, "region": yahoo_region, "lang": yahoo_language,
+            })
         })
 
         for feed_info in all_feeds:
@@ -129,7 +138,7 @@ class GenericRSSCollector(BaseCollector):
 
                     # If it's a general front-page feed, filter for equity match.
                     # If it's an equity-specific ticker feed, all articles belong to this equity!
-                    is_equity_feed = f"{profile.ticker}.NS" in feed_url
+                    is_equity_feed = feed_name.startswith("Yahoo Finance (")
                     if not is_equity_feed and not self._matches_equity(f"{title} {summary}", profile):
                         continue
 

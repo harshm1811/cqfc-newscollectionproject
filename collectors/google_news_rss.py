@@ -127,6 +127,16 @@ class GoogleNewsRSSCollector(BaseCollector):
         """
         self.logger.info(f"Starting Google News collection for {profile.ticker}")
 
+        # Keep existing Indian defaults and use localized results for supported
+        # international company profiles.
+        if profile.country.lower() != "india":
+            country_codes = {"united states": "US", "united kingdom": "GB", "canada": "CA",
+                             "australia": "AU", "japan": "JP", "germany": "DE",
+                             "france": "FR", "switzerland": "CH", "singapore": "SG",
+                             "international": "US"}
+            code = country_codes.get(profile.country.lower(), "US")
+            self.gl, self.hl = code, f"en-{code}"
+
         # Clean company name
         clean_name = profile.company_name
         for suffix in [" Limited", " Ltd.", " Ltd"]:

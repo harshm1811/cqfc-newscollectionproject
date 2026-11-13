@@ -40,3 +40,39 @@ def test_resolve_fuzzy_name():
     profile = resolver.resolve("tata motors")
     assert profile is not None
     assert profile.ticker == "TATAMOTORS"
+
+
+def test_resolve_foreign_ticker_from_verified_search_result(tmp_path, monkeypatch):
+    resolver = EquityResolver(cache_db_path=str(tmp_path / "cache.sqlite"))
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"quotes": [{"quoteType": "EQUITY", "symbol": "AAPL", "exchange": "NMS",
+                                "country": "United States", "longname": "Apple Inc."}]}
+
+    monkeypatch.setattr(resolver.session, "get", lambda *args, **kwargs: Response())
+    profile = resolver.resolve("AAPL")
+    assert profile is not None
+    assert profile.ticker == "AAPL"
+    assert profile.exchange == "NMS"
+    assert profile.country == "United States"
+
+
+def test_resolve_foreign_company_name_without_corporate_suffix(tmp_path, monkeypatch):
+    resolver = EquityResolver(cache_db_path=str(tmp_path / "cache.sqlite"))
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"quotes": [{"quoteType": "EQUITY", "symbol": "AAPL", "exchange": "NMS",
+                                "country": "United States", "longname": "Apple Inc."}]}
+
+    monkeypatch.setattr(resolver.session, "get", lambda *args, **kwargs: Response())
+    profile = resolver.resolve("Apple")
+    assert profile is not None
+    assert profile.ticker == "AAPL"

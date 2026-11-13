@@ -159,12 +159,13 @@ def collect_equity_news(
         collectors.append(GoogleNewsRSSCollector(config=config))
     if collectors_cfg.get("generic_rss", {}).get("enabled", True):
         collectors.append(GenericRSSCollector(config=config))
-    if collectors_cfg.get("nse_announcements", {}).get("enabled", True):
-        collectors.append(NSECollector(config=config))
-    if collectors_cfg.get("bse_announcements", {}).get("enabled", True):
-        collectors.append(BSECollector(config=config))
-    if collectors_cfg.get("sebi_releases", {}).get("enabled", True):
-        collectors.append(SEBICollector(config=config))
+    if profile.country.lower() == "india":
+        if collectors_cfg.get("nse_announcements", {}).get("enabled", True):
+            collectors.append(NSECollector(config=config))
+        if collectors_cfg.get("bse_announcements", {}).get("enabled", True):
+            collectors.append(BSECollector(config=config))
+        if collectors_cfg.get("sebi_releases", {}).get("enabled", True):
+            collectors.append(SEBICollector(config=config))
     if collectors_cfg.get("company_ir", {}).get("enabled", False):
         collectors.append(CompanyIRCollector(config=config))
 
